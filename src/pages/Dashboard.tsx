@@ -16,100 +16,68 @@ import {
   Building2,
   Bell,
   Settings,
-  LogOut
+  LogOut,
+  Loader2
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCurrentOrganization } from "@/hooks/useCurrentOrganization";
 
-// Mock data - replace with API calls
-const mockOrgData = {
-  name: "Tech Innovations Inc",
-  role: "Admin",
-  totalProjects: 12,
-  activeProjects: 8,
-  totalWorkers: 45,
-  activeWorkers: 42,
-  monthlyRevenue: 125000,
-  completedTasks: 89
-};
-
-const mockProjects = [
-  {
-    id: "1",
-    name: "E-commerce Platform",
-    status: "active",
-    progress: 75,
-    dueDate: "2024-03-15",
-    team: 8,
-    priority: "high"
-  },
-  {
-    id: "2", 
-    name: "Mobile App Development",
-    status: "active",
-    progress: 45,
-    dueDate: "2024-04-20",
-    team: 6,
-    priority: "medium"
-  },
-  {
-    id: "3",
-    name: "Data Analytics Dashboard",
-    status: "completed",
-    progress: 100,
-    dueDate: "2024-02-28",
-    team: 4,
-    priority: "low"
-  }
-];
-
-const mockWorkers = [
-  {
-    id: "1",
-    name: "John Smith",
-    role: "Senior Developer",
-    status: "online",
-    avatar: "",
-    projects: 3
-  },
-  {
-    id: "2",
-    name: "Sarah Johnson", 
-    role: "Project Manager",
-    status: "online",
-    avatar: "",
-    projects: 5
-  },
-  {
-    id: "3",
-    name: "Mike Chen",
-    role: "Designer",
-    status: "offline",
-    avatar: "",
-    projects: 2
-  }
-];
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [selectedTab, setSelectedTab] = useState("overview");
+  const { logout } = useAuth();
+  const { organization, projects, workers, isLoading, error } = useCurrentOrganization();
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active": return "bg-success text-success-foreground";
+    switch (status.toLowerCase()) {
+      case "in_progress": return "bg-success text-success-foreground";
       case "completed": return "bg-primary text-primary-foreground";
-      case "pending": return "bg-warning text-warning-foreground";
+      case "planning": return "bg-warning text-warning-foreground";
+      case "on_hold": return "bg-muted text-muted-foreground";
+      case "cancelled": return "bg-error text-error-foreground";
       default: return "bg-secondary text-secondary-foreground";
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "high": return "bg-error text-error-foreground";
-      case "medium": return "bg-warning text-warning-foreground";
-      case "low": return "bg-success text-success-foreground";
-      default: return "bg-secondary text-secondary-foreground";
-    }
+  const handleLogout = () => {
+    logout();
+    navigate("/");
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-error">Error</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate("/")} className="w-full">
+              Return to Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Calculate stats from real data
+  const activeProjects = projects.filter(p => p.status === 'IN_PROGRESS').length;
+  const completedProjects = projects.filter(p => p.status === 'COMPLETED').length;
+  const activeWorkers = workers.filter(w => w.isActive).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -129,7 +97,7 @@ export default function Dashboard() {
               <AvatarImage src="" />
               <AvatarFallback>AD</AvatarFallback>
             </Avatar>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
@@ -143,7 +111,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground">
-                {mockOrgData.name}
+                {organization?.name}
               </h1>
               <p className="text-muted-foreground">
                 Welcome back! Here's what's happening with your organization.
@@ -151,7 +119,7 @@ export default function Dashboard() {
             </div>
             <Badge variant="secondary" className="px-3 py-1">
               <Building2 className="h-4 w-4 mr-1" />
-              {mockOrgData.role}
+              Organization
             </Badge>
           </div>
         </div>
@@ -164,9 +132,9 @@ export default function Dashboard() {
               <FolderOpen className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockOrgData.activeProjects}</div>
+              <div className="text-2xl font-bold">{activeProjects}</div>
               <p className="text-xs text-muted-foreground">
-                of {mockOrgData.totalProjects} total projects
+                of {projects.length} total projects
               </p>
             </CardContent>
           </Card>
@@ -177,9 +145,9 @@ export default function Dashboard() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockOrgData.activeWorkers}</div>
+              <div className="text-2xl font-bold">{activeWorkers}</div>
               <p className="text-xs text-muted-foreground">
-                of {mockOrgData.totalWorkers} total workers
+                of {workers.length} total workers
               </p>
             </CardContent>
           </Card>
@@ -191,11 +159,11 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ${mockOrgData.monthlyRevenue.toLocaleString()}
+                ${completedProjects * 25000}
               </div>
               <p className="text-xs text-success flex items-center">
                 <TrendingUp className="h-3 w-3 mr-1" />
-                +12% from last month
+                Based on completed projects
               </p>
             </CardContent>
           </Card>
@@ -206,9 +174,9 @@ export default function Dashboard() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{mockOrgData.completedTasks}</div>
+              <div className="text-2xl font-bold">{completedProjects}</div>
               <p className="text-xs text-muted-foreground">
-                This month
+                Completed projects
               </p>
             </CardContent>
           </Card>
@@ -232,7 +200,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockProjects.map((project) => (
+                {projects.slice(0, 3).map((project) => (
                   <div
                     key={project.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover-lift cursor-pointer"
@@ -242,32 +210,23 @@ export default function Dashboard() {
                       <div className="flex items-center gap-3 mb-2">
                         <h4 className="font-medium">{project.name}</h4>
                         <Badge className={getStatusColor(project.status)}>
-                          {project.status}
-                        </Badge>
-                        <Badge variant="outline" className={getPriorityColor(project.priority)}>
-                          {project.priority}
+                          {project.status.replace('_', ' ')}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Users className="h-3 w-3" />
-                          {project.team} members
+                          {project.teamMembers.length} members
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Due {project.dueDate}
+                          Due {new Date(project.tentativeEndingDate).toLocaleDateString()}
                         </span>
                       </div>
                       <div className="mt-2">
-                        <div className="w-full bg-secondary rounded-full h-2">
-                          <div 
-                            className="bg-primary h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${project.progress}%` }}
-                          />
+                        <div className="text-xs text-muted-foreground">
+                          Code: {project.projectCode || project.orderNo}
                         </div>
-                        <span className="text-xs text-muted-foreground mt-1">
-                          {project.progress}% complete
-                        </span>
                       </div>
                     </div>
                     <Button variant="ghost" size="sm">
@@ -302,7 +261,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockWorkers.map((worker) => (
+                {workers.slice(0, 3).map((worker) => (
                   <div
                     key={worker.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover-lift cursor-pointer"
@@ -310,25 +269,25 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center gap-3">
                       <Avatar>
-                        <AvatarImage src={worker.avatar} />
+                        <AvatarImage src="" />
                         <AvatarFallback>
                           {worker.name.split(" ").map(n => n[0]).join("")}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <h4 className="font-medium">{worker.name}</h4>
-                        <p className="text-sm text-muted-foreground">{worker.role}</p>
+                        <p className="text-sm text-muted-foreground">UAN: {worker.uanNumber}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className="text-sm font-medium">{worker.projects} projects</p>
+                        <p className="text-sm font-medium">{worker.orgIds.length} org(s)</p>
                         <div className="flex items-center gap-1">
                           <div className={`w-2 h-2 rounded-full ${
-                            worker.status === "online" ? "bg-success" : "bg-muted-foreground"
+                            worker.isActive ? "bg-success" : "bg-muted-foreground"
                           }`} />
-                          <span className="text-xs text-muted-foreground capitalize">
-                            {worker.status}
+                          <span className="text-xs text-muted-foreground">
+                            {worker.isActive ? "Active" : "Inactive"}
                           </span>
                         </div>
                       </div>

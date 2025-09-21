@@ -7,49 +7,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Logo } from "@/components/ui/logo";
 import { Eye, EyeOff, Mail, Lock, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock organization data - replace with API call
-const mockOrganizations = [
-  { id: "1", name: "Tech Innovations Inc", role: "Admin" },
-  { id: "2", name: "Digital Solutions Ltd", role: "Manager" },
-  { id: "3", name: "Creative Agency Co", role: "User" }
-];
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
+  const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showOrgSelector, setShowOrgSelector] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { login, user } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Mock login - replace with actual API call
-    setTimeout(() => {
-      if (email && password) {
-        setShowOrgSelector(true);
-        toast({
-          title: "Login successful!",
-          description: "Please select your organization to continue.",
-        });
-      } else {
-        toast({
-          title: "Login failed",
-          description: "Please check your credentials and try again.",
-          variant: "destructive",
-        });
-      }
+    try {
+      await login(usernameOrEmail, password);
+      setShowOrgSelector(true);
+      toast({
+        title: "Login successful!",
+        description: "Please select your organization to continue.",
+      });
+    } catch (error) {
+      toast({
+        title: "Login failed",
+        description: "Please check your credentials and try again.",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const handleOrgSelection = (orgId: string) => {
-    // Store selected organization in localStorage/context
-    localStorage.setItem("selectedOrg", orgId);
+    localStorage.setItem("selectedOrgId", orgId);
     navigate("/dashboard");
   };
 
@@ -80,15 +73,15 @@ export default function Login() {
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="usernameOrEmail">Username or Email</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="usernameOrEmail"
+                    type="text"
+                    placeholder="Enter your username or email"
+                    value={usernameOrEmail}
+                    onChange={(e) => setUsernameOrEmail(e.target.value)}
                     className="pl-10"
                     required
                   />
@@ -155,20 +148,20 @@ export default function Login() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {mockOrganizations.map((org) => (
+                {user?.orgMemberships.map((org) => (
                   <Button
-                    key={org.id}
+                    key={org.orgId}
                     variant="outline"
                     className="w-full justify-between hover-lift"
-                    onClick={() => handleOrgSelection(org.id)}
+                    onClick={() => handleOrgSelection(org.orgId)}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                         <Building2 className="h-5 w-5 text-primary" />
                       </div>
                       <div className="text-left">
-                        <p className="font-medium">{org.name}</p>
-                        <p className="text-sm text-muted-foreground">{org.role}</p>
+                        <p className="font-medium">{org.orgName}</p>
+                        <p className="text-sm text-muted-foreground">{org.roles.join(", ")}</p>
                       </div>
                     </div>
                   </Button>
