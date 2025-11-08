@@ -29,7 +29,9 @@ export default function Dashboard() {
   const { logout } = useAuth();
   const { organization, projects, workers, isLoading, error } = useCurrentOrganization();
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | null | undefined) => {
+    if (!status) return "bg-secondary text-secondary-foreground";
+    
     switch (status.toLowerCase()) {
       case "in_progress": return "bg-success text-success-foreground";
       case "completed": return "bg-primary text-primary-foreground";
@@ -210,7 +212,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-3 mb-2">
                         <h4 className="font-medium">{project.name}</h4>
                         <Badge className={getStatusColor(project.status)}>
-                          {project.status.replace('_', ' ')}
+                          {project.status ? project.status.replace('_', ' ') : 'Unknown'}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">

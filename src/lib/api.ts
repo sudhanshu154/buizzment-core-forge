@@ -1,5 +1,6 @@
 // API Configuration and utilities
-const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+console.log('API_BASE_URL set to:', API_BASE_URL); // Debug log
 
 // Types based on your API documentation
 export interface LoginRequest {
@@ -124,6 +125,8 @@ class ApiClient {
     const token = tokenManager.getToken();
     
     const url = `${this.baseURL}${endpoint}`;
+    console.log('API Request URL:', url); // Debug log
+    console.log('Base URL:', this.baseURL); // Debug log
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',

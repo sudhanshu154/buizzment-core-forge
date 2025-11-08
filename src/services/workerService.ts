@@ -17,7 +17,7 @@ export const workerService = {
     formData.append('file', file);
     
     const token = localStorage.getItem('buizzment_token');
-    const response = await fetch(`${process.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/workers/bulk-import/${orgId}`, {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/workers/bulk-import/${orgId}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
