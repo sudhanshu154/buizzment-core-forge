@@ -17,7 +17,8 @@ import {
   UserCheck,
   MoreHorizontal,
   Settings,
-  Edit
+  Edit,
+  Plus
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 
@@ -265,15 +266,33 @@ export default function ProjectDetails() {
                 <CardDescription>Track team attendance and working hours</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12">
-                  <UserCheck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Attendance System</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Monitor team attendance, track working hours, and manage leave requests.
-                  </p>
-                  <Button className="bg-gradient-primary">
-                    View Attendance Records
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">Attendance Sheets</h3>
+                    <Button className="bg-gradient-primary">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create New Sheet
+                    </Button>
+                  </div>
+                  
+                  <div className="grid gap-4">
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/project/${id}/attendance/sheet-1`)}>
+                      <CardContent className="pt-6">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold mb-1">July-August 2025 Attendance</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Period: 24/07/2025 - 23/08/2025
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Workers: 6 | Total Days: 31
+                            </p>
+                          </div>
+                          <Badge className="bg-success text-success-foreground">Active</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
                 </div>
               </CardContent>
             </Card>
