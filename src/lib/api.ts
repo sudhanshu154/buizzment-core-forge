@@ -310,6 +310,12 @@ class ApiClient {
       return mockApiClient.getCurrentUser() as T;
     }
 
+    // Handle /workers?orgId=xxx format
+    if (endpoint.startsWith('/workers?orgId=')) {
+      const orgId = endpoint.split('orgId=')[1];
+      return mockApiClient.getWorkers(orgId) as T;
+    }
+
     if (endpoint.startsWith('/orgs/')) {
       const parts = endpoint.split('/');
       const orgId = parts[2];
