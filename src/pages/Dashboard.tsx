@@ -22,12 +22,58 @@ import {
 import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCurrentOrganization } from "@/hooks/useCurrentOrganization";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { projectService } from "@/services/projectService";
+import { CreateProjectRequest, CreateWorkerRequest } from "@/lib/api";
+import { workerService } from "@/services/workerService";
 
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const { organization, projects, workers, isLoading, error } = useCurrentOrganization();
+  const { organization, projects, workers, isLoading, error, refetchData } = useCurrentOrganization();
+  
+  // Project creation dialog state
+  const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
+  const [isSubmittingProject, setIsSubmittingProject] = useState(false);
+  const [projectFormData, setProjectFormData] = useState<CreateProjectRequest & { initialTeamMembersString?: string }>({
+    name: "",
+    orderNo: "",
+    el1No: "",
+    startingDate: "",
+    tentativeEndingDate: "",
+    initialTeamMembers: [],
+    initialTeamMembersString: "",
+  });
+
+  // Worker creation dialog state
+  const [isCreateWorkerDialogOpen, setIsCreateWorkerDialogOpen] = useState(false);
+  const [isSubmittingWorker, setIsSubmittingWorker] = useState(false);
+  const [workerFormData, setWorkerFormData] = useState<CreateWorkerRequest & { tagsString?: string; includeBankDetails?: boolean }>({
+    name: "",
+    uanNumber: "",
+    contactNumber: "",
+    tags: [],
+    tagsString: "",
+    orgIds: [],
+    includeBankDetails: false,
+    bankDetails: {
+      accountNumber: "",
+      ifscCode: "",
+      bankName: "",
+      branch: "",
+    },
+  });
 
   const getStatusColor = (status: string | null | undefined) => {
     if (!status) return "bg-secondary text-secondary-foreground";
@@ -45,6 +91,182 @@ export default function Dashboard() {
   const handleLogout = () => {
     logout();
     navigate("/");
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const orgId = localStorage.getItem('selectedOrgId');
+    if (!orgId) {
+      alert('No organization selected');
+      return;
+    }
+
+    try {
+      setIsSubmittingProject(true);
+      
+      // Parse initialTeamMembers from comma-separated string
+      const teamMembers = projectFormData.initialTeamMembers && projectFormData.initialTeamMembers.length > 0
+        ? projectFormData.initialTeamMembers
+        : projectFormData.initialTeamMembersString
+        ? projectFormData.initialTeamMembersString.split(',').map(id => id.trim()).filter(id => id.length > 0)
+        : [];
+
+      const projectData: CreateProjectRequest = {
+        name: projectFormData.name,
+        orderNo: projectFormData.orderNo,
+        el1No: projectFormData.el1No,
+        startingDate: projectFormData.startingDate,
+        tentativeEndingDate: projectFormData.tentativeEndingDate,
+        initialTeamMembers: teamMembers.length > 0 ? teamMembers : undefined,
+      };
+
+      await projectService.createProject(orgId, projectData);
+      
+      // Reset form and close dialog
+      setProjectFormData({
+        name: "",
+        orderNo: "",
+        el1No: "",
+        startingDate: "",
+        tentativeEndingDate: "",
+        initialTeamMembers: [],
+        initialTeamMembersString: "",
+      });
+      setIsCreateProjectDialogOpen(false);
+      
+      // Refresh projects list
+      await refetchData();
+    } catch (err) {
+      console.error('Failed to create project:', err);
+      alert(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setIsSubmittingProject(false);
+    }
+  };
+
+  const handleProjectDialogOpenChange = (open: boolean) => {
+    setIsCreateProjectDialogOpen(open);
+    if (!open) {
+      // Reset form when dialog closes
+      setProjectFormData({
+        name: "",
+        orderNo: "",
+        el1No: "",
+        startingDate: "",
+        tentativeEndingDate: "",
+        initialTeamMembers: [],
+        initialTeamMembersString: "",
+      });
+    }
+  };
+
+  const handleCreateWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const orgId = localStorage.getItem('selectedOrgId');
+    if (!orgId) {
+      alert('No organization selected');
+      return;
+    }
+
+    try {
+      setIsSubmittingWorker(true);
+      
+      // Parse tags from comma-separated string
+      const tags = workerFormData.tagsString
+        ? workerFormData.tagsString.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+        : workerFormData.tags || [];
+
+      // Prepare worker data - transform orgIds to org_ids for API
+      const workerData: any = {
+        name: workerFormData.name,
+        uanNumber: workerFormData.uanNumber,
+        contactNumber: workerFormData.contactNumber || undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        org_ids: [orgId], // API expects snake_case
+      };
+
+      // Add bank details if provided
+      if (workerFormData.includeBankDetails && workerFormData.bankDetails) {
+        const { accountNumber, ifscCode, bankName, branch } = workerFormData.bankDetails;
+        if (accountNumber && ifscCode && bankName && branch) {
+          workerData.bankDetails = {
+            accountNumber,
+            ifscCode,
+            bankName,
+            branch,
+          };
+        }
+      }
+
+      // Use fetch directly to send org_ids in snake_case
+      const token = localStorage.getItem('buizzment_token');
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+      const response = await fetch(`${apiBaseUrl}/workers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(workerData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`API Error: ${response.status} - ${errorData}`);
+      }
+
+      await response.json();
+      
+      // Reset form and close dialog
+      setWorkerFormData({
+        name: "",
+        uanNumber: "",
+        contactNumber: "",
+        tags: [],
+        tagsString: "",
+        orgIds: [],
+        includeBankDetails: false,
+        bankDetails: {
+          accountNumber: "",
+          ifscCode: "",
+          bankName: "",
+          branch: "",
+        },
+      });
+      setIsCreateWorkerDialogOpen(false);
+      
+      // Refresh workers list
+      await refetchData();
+    } catch (err) {
+      console.error('Failed to create worker:', err);
+      alert(err instanceof Error ? err.message : 'Failed to create worker');
+    } finally {
+      setIsSubmittingWorker(false);
+    }
+  };
+
+  const handleWorkerDialogOpenChange = (open: boolean) => {
+    setIsCreateWorkerDialogOpen(open);
+    if (!open) {
+      // Reset form when dialog closes
+      setWorkerFormData({
+        name: "",
+        uanNumber: "",
+        contactNumber: "",
+        tags: [],
+        tagsString: "",
+        orgIds: [],
+        includeBankDetails: false,
+        bankDetails: {
+          accountNumber: "",
+          ifscCode: "",
+          bankName: "",
+          branch: "",
+        },
+      });
+    }
   };
 
   if (isLoading) {
@@ -194,7 +416,11 @@ export default function Dashboard() {
                   <CardTitle>Recent Projects</CardTitle>
                   <CardDescription>Manage your active projects</CardDescription>
                 </div>
-                <Button size="sm" className="bg-gradient-primary">
+                <Button 
+                  size="sm" 
+                  className="bg-gradient-primary"
+                  onClick={() => setIsCreateProjectDialogOpen(true)}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add Project
                 </Button>
@@ -255,7 +481,11 @@ export default function Dashboard() {
                   <CardTitle>Team Members</CardTitle>
                   <CardDescription>Manage your workforce</CardDescription>
                 </div>
-                <Button size="sm" variant="outline">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => setIsCreateWorkerDialogOpen(true)}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add Worker
                 </Button>
@@ -311,6 +541,296 @@ export default function Dashboard() {
           </Card>
         </div>
       </main>
+
+      {/* Create Project Dialog */}
+      <Dialog open={isCreateProjectDialogOpen} onOpenChange={handleProjectDialogOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              Fill in the details to create a new project for your organization.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleCreateProject} className="space-y-6">
+            <div className="space-y-4">
+              {/* Project Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name">Project Name *</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  value={projectFormData.name}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, name: e.target.value })}
+                  placeholder="e.g., Mill 1,2"
+                  required
+                />
+              </div>
+
+              {/* Order Number */}
+              <div className="space-y-2">
+                <Label htmlFor="orderNo">Order Number *</Label>
+                <Input
+                  id="orderNo"
+                  type="text"
+                  value={projectFormData.orderNo}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, orderNo: e.target.value })}
+                  placeholder="e.g., ORD-2023-001"
+                  required
+                />
+              </div>
+
+              {/* EL1 Number */}
+              <div className="space-y-2">
+                <Label htmlFor="el1No">EL1 Number *</Label>
+                <Input
+                  id="el1No"
+                  type="text"
+                  value={projectFormData.el1No}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, el1No: e.target.value })}
+                  placeholder="e.g., EL1-2023-001"
+                  required
+                />
+              </div>
+
+              {/* Starting Date */}
+              <div className="space-y-2">
+                <Label htmlFor="startingDate">Starting Date *</Label>
+                <Input
+                  id="startingDate"
+                  type="date"
+                  value={projectFormData.startingDate}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, startingDate: e.target.value })}
+                  required
+                />
+              </div>
+
+              {/* Tentative Ending Date */}
+              <div className="space-y-2">
+                <Label htmlFor="tentativeEndingDate">Tentative Ending Date *</Label>
+                <Input
+                  id="tentativeEndingDate"
+                  type="date"
+                  value={projectFormData.tentativeEndingDate}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, tentativeEndingDate: e.target.value })}
+                  required
+                />
+              </div>
+
+              {/* Initial Team Members */}
+              <div className="space-y-2">
+                <Label htmlFor="initialTeamMembers">Initial Team Members (Optional)</Label>
+                <Input
+                  id="initialTeamMembers"
+                  type="text"
+                  value={projectFormData.initialTeamMembersString || ""}
+                  onChange={(e) => setProjectFormData({ ...projectFormData, initialTeamMembersString: e.target.value })}
+                  placeholder="e.g., user1, user2 (comma-separated user IDs)"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter comma-separated user IDs to add initial team members to the project.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleProjectDialogOpenChange(false)}
+                disabled={isSubmittingProject}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingProject || !projectFormData.name || !projectFormData.orderNo || !projectFormData.el1No || !projectFormData.startingDate || !projectFormData.tentativeEndingDate}
+                className="bg-gradient-primary"
+              >
+                {isSubmittingProject ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Project"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Worker Dialog */}
+      <Dialog open={isCreateWorkerDialogOpen} onOpenChange={handleWorkerDialogOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add New Worker</DialogTitle>
+            <DialogDescription>
+              Fill in the details to add a new worker to your organization.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleCreateWorker} className="space-y-6">
+            <div className="space-y-4">
+              {/* Worker Name */}
+              <div className="space-y-2">
+                <Label htmlFor="workerName">Name *</Label>
+                <Input
+                  id="workerName"
+                  type="text"
+                  value={workerFormData.name}
+                  onChange={(e) => setWorkerFormData({ ...workerFormData, name: e.target.value })}
+                  placeholder="e.g., test002"
+                  required
+                />
+              </div>
+
+              {/* UAN Number */}
+              <div className="space-y-2">
+                <Label htmlFor="uanNumber">UAN Number *</Label>
+                <Input
+                  id="uanNumber"
+                  type="text"
+                  value={workerFormData.uanNumber}
+                  onChange={(e) => setWorkerFormData({ ...workerFormData, uanNumber: e.target.value })}
+                  placeholder="e.g., 123456789120"
+                  required
+                />
+              </div>
+
+              {/* Contact Number */}
+              <div className="space-y-2">
+                <Label htmlFor="contactNumber">Contact Number</Label>
+                <Input
+                  id="contactNumber"
+                  type="tel"
+                  value={workerFormData.contactNumber}
+                  onChange={(e) => setWorkerFormData({ ...workerFormData, contactNumber: e.target.value })}
+                  placeholder="e.g., 9999999999"
+                />
+              </div>
+
+              {/* Tags */}
+              <div className="space-y-2">
+                <Label htmlFor="tags">Tags (Optional)</Label>
+                <Input
+                  id="tags"
+                  type="text"
+                  value={workerFormData.tagsString || ""}
+                  onChange={(e) => setWorkerFormData({ ...workerFormData, tagsString: e.target.value })}
+                  placeholder="e.g., electrician, senior (comma-separated)"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter comma-separated tags to categorize the worker.
+                </p>
+              </div>
+
+              {/* Bank Details Toggle */}
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="includeBankDetails"
+                    checked={workerFormData.includeBankDetails}
+                    onCheckedChange={(checked) => setWorkerFormData({ ...workerFormData, includeBankDetails: !!checked })}
+                  />
+                  <Label htmlFor="includeBankDetails" className="cursor-pointer">
+                    Include Bank Details
+                  </Label>
+                </div>
+              </div>
+
+              {/* Bank Details Section */}
+              {workerFormData.includeBankDetails && (
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+                  <h4 className="font-medium text-sm">Bank Details</h4>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="accountNumber">Account Number *</Label>
+                    <Input
+                      id="accountNumber"
+                      type="text"
+                      value={workerFormData.bankDetails?.accountNumber || ""}
+                      onChange={(e) => setWorkerFormData({
+                        ...workerFormData,
+                        bankDetails: { ...workerFormData.bankDetails!, accountNumber: e.target.value }
+                      })}
+                      placeholder="e.g., 1234567890"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="ifscCode">IFSC Code *</Label>
+                    <Input
+                      id="ifscCode"
+                      type="text"
+                      value={workerFormData.bankDetails?.ifscCode || ""}
+                      onChange={(e) => setWorkerFormData({
+                        ...workerFormData,
+                        bankDetails: { ...workerFormData.bankDetails!, ifscCode: e.target.value }
+                      })}
+                      placeholder="e.g., SBIN0001234"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bankName">Bank Name *</Label>
+                    <Input
+                      id="bankName"
+                      type="text"
+                      value={workerFormData.bankDetails?.bankName || ""}
+                      onChange={(e) => setWorkerFormData({
+                        ...workerFormData,
+                        bankDetails: { ...workerFormData.bankDetails!, bankName: e.target.value }
+                      })}
+                      placeholder="e.g., State Bank of India"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="branch">Branch *</Label>
+                    <Input
+                      id="branch"
+                      type="text"
+                      value={workerFormData.bankDetails?.branch || ""}
+                      onChange={(e) => setWorkerFormData({
+                        ...workerFormData,
+                        bankDetails: { ...workerFormData.bankDetails!, branch: e.target.value }
+                      })}
+                      placeholder="e.g., Main Branch"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleWorkerDialogOpenChange(false)}
+                disabled={isSubmittingWorker}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmittingWorker || !workerFormData.name || !workerFormData.uanNumber}
+                className="bg-gradient-primary"
+              >
+                {isSubmittingWorker ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  "Add Worker"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,0 +1,10 @@
+attendece sheet
+
+ @ProjectDetails.tsx (274-276) this is my project front end please help me makeing it.
+
+Now what i want to do is introduce a attendence sheet page which will be like-
+
+1. An Attendance sheet belongs to a month of a project.
+2. header will be the deatils link- Period of duration(what date to which date this sheet is for), number of works, project deatils
+2.main boady - it will be a tabuller formmat like excell sheet(with name, designation, dates like is sheet is for 24/07/2025 to 23/08/2025 then it will contain columbs names as 24,25,26,27,...31,1,2,3,...23), Present(will show the number of present date of the worker),ncp days(shows number of absent the worker did)
+3. total horizontal - at the bottom will have this to see the total presnt,absent,ot,totalof these(presnt-absent-ot), at the intersection of vertical total and horizontaol total will have the total number of present days of all workers

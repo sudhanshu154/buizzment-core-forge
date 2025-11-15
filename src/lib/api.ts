@@ -270,13 +270,16 @@ class ApiClient {
   ): Promise<T> {
     // Use mock API if no backend URL is configured
     if (USE_MOCK_API) {
+      console.warn('⚠️ Using MOCK API - VITE_API_BASE_URL is not set. Request:', options.method || 'GET', endpoint);
       return this.getMockResponse<T>(endpoint, options.method || 'GET', options.body);
     }
 
     const token = tokenManager.getToken();
     
     const url = `${this.baseURL}${endpoint}`;
-    console.log('API Request URL:', url);
+    console.log('🌐 Making API Request:', options.method || 'GET', url);
+    console.log('📦 Request Body:', options.body);
+    
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -289,15 +292,21 @@ class ApiClient {
     try {
       const response = await fetch(url, config);
       
+      console.log('📥 API Response Status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.text();
+        console.error('❌ API Error:', response.status, errorData);
         throw new Error(`API Error: ${response.status} - ${errorData}`);
       }
 
-      return response.json();
+      const data = await response.json();
+      console.log('✅ API Success:', data);
+      return data;
     } catch (error) {
-      console.warn('API request failed, falling back to mock data:', error);
-      return this.getMockResponse<T>(endpoint, options.method || 'GET', options.body);
+      console.error('❌ API request failed:', error);
+      // Don't silently fall back to mock - throw the error instead
+      throw error;
     }
   }
 
@@ -321,12 +330,47 @@ class ApiClient {
       const orgId = parts[2];
       
       if (parts[3] === 'projects') {
+        if (method === 'POST') {
+          // Handle project creation
+          const requestData = body ? JSON.parse(body as string) : {};
+          const projects = mockApiClient.getProjects(orgId);
+          const newProject: ProjectResponse = {
+            id: `proj-${Date.now()}`,
+            name: requestData.name || '',
+            orderNo: requestData.orderNo || '',
+            el1No: requestData.el1No || '',
+            projectCode: requestData.projectCode || requestData.orderNo || '',
+            startingDate: requestData.startingDate || '',
+            tentativeEndingDate: requestData.tentativeEndingDate || '',
+            status: 'PLANNING',
+            orgId: orgId,
+            orgName: 'Demo Organization',
+            createdBy: 'user-1',
+            createdAt: new Date().toISOString(),
+            teamMembers: requestData.initialTeamMembers || [],
+            taskCount: 0
+          };
+          return newProject as T;
+        }
         return mockApiClient.getProjects(orgId) as T;
       }
       if (parts[3] === 'workers') {
         return mockApiClient.getWorkers(orgId) as T;
       }
       return mockApiClient.getOrganization(orgId) as T;
+    }
+
+    // Handle POST /attendances/
+    if (method === 'POST' && endpoint === '/attendances/') {
+      const requestData = body ? JSON.parse(body as string) : {};
+      return {
+        id: `attendance-${Date.now()}`,
+        tenderId: requestData.tenderId || '',
+        monthYear: requestData.monthYear || '',
+        startDate: requestData.startDate || '',
+        endDate: requestData.endDate || '',
+        createdAt: new Date().toISOString(),
+      } as T;
     }
 
     throw new Error(`Mock endpoint not implemented: ${method} ${endpoint}`);

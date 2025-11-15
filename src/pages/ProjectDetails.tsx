@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   ArrowLeft,
   Users, 
@@ -18,60 +29,260 @@ import {
   MoreHorizontal,
   Settings,
   Edit,
-  Plus
+  Plus,
+  Loader2
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
-
-// Mock project data - replace with API call
-const mockProject = {
-  id: "1",
-  name: "E-commerce Platform",
-  description: "A comprehensive e-commerce solution with modern UI/UX, payment integration, and inventory management.",
-  status: "active",
-  progress: 75,
-  startDate: "2024-01-15",
-  dueDate: "2024-03-15",
-  budget: 85000,
-  spent: 63750,
-  priority: "high",
-  client: "TechCorp Solutions",
-  team: [
-    { id: "1", name: "John Smith", role: "Lead Developer", avatar: "", status: "online" },
-    { id: "2", name: "Sarah Johnson", role: "UI/UX Designer", avatar: "", status: "online" },
-    { id: "3", name: "Mike Chen", role: "Backend Developer", avatar: "", status: "offline" },
-    { id: "4", name: "Emily Davis", role: "QA Engineer", avatar: "", status: "online" }
-  ],
-  tasks: [
-    { id: "1", name: "User Authentication System", status: "completed", assignee: "John Smith" },
-    { id: "2", name: "Product Catalog Interface", status: "in-progress", assignee: "Sarah Johnson" },
-    { id: "3", name: "Payment Gateway Integration", status: "pending", assignee: "Mike Chen" },
-    { id: "4", name: "Order Management System", status: "in-progress", assignee: "John Smith" }
-  ]
-};
+import { workerService } from "@/services/workerService";
+import { attendanceService } from "@/services/attendanceService";
+import { projectService } from "@/services/projectService";
+import { WorkerResponse, ProjectResponse } from "@/lib/api";
 
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // Project data state
+  const [project, setProject] = useState<ProjectResponse | null>(null);
+  const [isLoadingProject, setIsLoadingProject] = useState(true);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  
+  // Create attendance sheet dialog state
+  const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
+  const [availableWorkers, setAvailableWorkers] = useState<WorkerResponse[]>([]);
+  const [selectedWorkerIds, setSelectedWorkerIds] = useState<Set<string>>(new Set());
+  const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    monthYear: "", // Format: "2025-06"
+    startDate: "", // Format: "01/06/2025"
+    endDate: "", // Format: "31/06/2025"
+  });
+  
+  // Fetch project data
+  const fetchProject = useCallback(async () => {
+    if (!id) {
+      setProjectError('No project ID provided');
+      setIsLoadingProject(false);
+      return;
+    }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active": return "bg-success text-success-foreground";
-      case "completed": return "bg-primary text-primary-foreground";
-      case "pending": return "bg-warning text-warning-foreground";
-      case "in-progress": return "bg-primary text-primary-foreground";
+    try {
+      setIsLoadingProject(true);
+      setProjectError(null);
+      const orgId = localStorage.getItem('selectedOrgId');
+      if (!orgId) {
+        setProjectError('No organization selected');
+        setIsLoadingProject(false);
+        return;
+      }
+      
+      const projectData = await projectService.getProject(orgId, id);
+      setProject(projectData);
+    } catch (error) {
+      console.error('Failed to fetch project:', error);
+      setProjectError(error instanceof Error ? error.message : 'Failed to load project');
+    } finally {
+      setIsLoadingProject(false);
+    }
+  }, [id]);
+  
+  // Fetch project on mount
+  useEffect(() => {
+    fetchProject();
+  }, [fetchProject]);
+  
+  // Fetch workers from API
+  const fetchWorkers = useCallback(async () => {
+    try {
+      setIsLoadingWorkers(true);
+      const orgId = localStorage.getItem('selectedOrgId');
+      if (!orgId) {
+        console.error('No organization ID found');
+        return;
+      }
+      
+      const workers = await workerService.getWorkers(orgId);
+      setAvailableWorkers(workers);
+    } catch (error) {
+      console.error('Failed to fetch workers:', error);
+    } finally {
+      setIsLoadingWorkers(false);
+    }
+  }, []);
+  
+  // Fetch workers when dialog opens
+  useEffect(() => {
+    if (isCreateSheetDialogOpen) {
+      fetchWorkers();
+    }
+  }, [isCreateSheetDialogOpen, fetchWorkers]);
+  
+  // Toggle worker selection - memoized to prevent re-renders
+  const toggleWorkerSelection = useCallback((workerId: string) => {
+    setSelectedWorkerIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(workerId)) {
+        newSet.delete(workerId);
+      } else {
+        newSet.add(workerId);
+      }
+      return newSet;
+    });
+  }, []);
+  
+  // Handle dialog open change - prevent infinite loops
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    setIsCreateSheetDialogOpen(open);
+    if (!open) {
+      // Reset form when closing
+      setFormData({ monthYear: "", startDate: "", endDate: "" });
+      setSelectedWorkerIds(new Set());
+    }
+  }, []);
+  
+  // Format date to DD/MM/YYYY
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+  
+  // Get monthYear from date input (YYYY-MM format)
+  const getMonthYear = (dateString: string): string => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  };
+  
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.startDate || !formData.endDate || selectedWorkerIds.size === 0) {
+      alert("Please fill all fields and select at least one worker");
+      return;
+    }
+    
+    try {
+      setIsSubmitting(true);
+      
+      // Format dates
+      const startDateFormatted = formatDate(formData.startDate);
+      const endDateFormatted = formatDate(formData.endDate);
+      const monthYear = formData.monthYear || getMonthYear(formData.startDate);
+      
+      console.log('📝 Creating attendance sheet with data:', {
+        tenderId: id,
+        monthYear,
+        startDate: startDateFormatted,
+        endDate: endDateFormatted,
+      });
+      
+      // Create attendance sheet
+      const result = await attendanceService.createAttendanceSheet({
+        tenderId: id || "", // Using project ID as tenderId
+        monthYear: monthYear,
+        startDate: startDateFormatted,
+        endDate: endDateFormatted,
+      });
+      
+      console.log('✅ Attendance sheet created:', result);
+      
+      // Reset form and close dialog
+      setFormData({ monthYear: "", startDate: "", endDate: "" });
+      setSelectedWorkerIds(new Set());
+      setIsCreateSheetDialogOpen(false);
+      
+      // Optionally refresh the page or show success message
+      alert("Attendance sheet created successfully!");
+      // You might want to refresh the attendance sheets list here
+      
+    } catch (error) {
+      console.error('❌ Failed to create attendance sheet:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to create attendance sheet: ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getStatusColor = (status: string | null | undefined) => {
+    if (!status) return "bg-secondary text-secondary-foreground";
+    
+    switch (status.toUpperCase()) {
+      case "IN_PROGRESS": return "bg-success text-success-foreground";
+      case "COMPLETED": return "bg-primary text-primary-foreground";
+      case "PLANNING": return "bg-warning text-warning-foreground";
+      case "ON_HOLD": return "bg-muted text-muted-foreground";
+      case "CANCELLED": return "bg-error text-error-foreground";
       default: return "bg-secondary text-secondary-foreground";
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "high": return "bg-error text-error-foreground";
-      case "medium": return "bg-warning text-warning-foreground";
-      case "low": return "bg-success text-success-foreground";
-      default: return "bg-secondary text-secondary-foreground";
-    }
+  const formatStatus = (status: string | null | undefined): string => {
+    if (!status) return "Unknown";
+    return status.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
   };
+
+  // Calculate progress based on dates (simple calculation)
+  const calculateProgress = (): number => {
+    if (!project) return 0;
+    const start = new Date(project.startingDate);
+    const end = new Date(project.tentativeEndingDate);
+    const now = new Date();
+    
+    if (now < start) return 0;
+    if (now > end) return 100;
+    
+    const total = end.getTime() - start.getTime();
+    const elapsed = now.getTime() - start.getTime();
+    return Math.round((elapsed / total) * 100);
+  };
+
+  // Format date for display
+  const formatDateDisplay = (dateString: string): string => {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  if (isLoadingProject) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading project...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (projectError || !project) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-error">Error</CardTitle>
+            <CardDescription>{projectError || 'Project not found'}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate("/dashboard")} className="w-full">
+              Return to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -108,18 +319,18 @@ export default function ProjectDetails() {
           <div className="flex items-start justify-between mb-4">
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2">
-                {mockProject.name}
+                {project.name}
               </h1>
               <p className="text-muted-foreground max-w-2xl">
-                {mockProject.description}
+                Project Code: {project.projectCode || project.orderNo} | Order: {project.orderNo} | EL1: {project.el1No}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={getStatusColor(mockProject.status)}>
-                {mockProject.status}
+              <Badge className={getStatusColor(project.status)}>
+                {formatStatus(project.status)}
               </Badge>
-              <Badge variant="outline" className={getPriorityColor(mockProject.priority)}>
-                {mockProject.priority} priority
+              <Badge variant="outline">
+                {project.orgName}
               </Badge>
             </div>
           </div>
@@ -132,8 +343,8 @@ export default function ProjectDetails() {
                   <span className="text-sm font-medium">Progress</span>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-2xl font-bold">{mockProject.progress}%</div>
-                  <Progress value={mockProject.progress} className="h-2" />
+                  <div className="text-2xl font-bold">{calculateProgress()}%</div>
+                  <Progress value={calculateProgress()} className="h-2" />
                 </div>
               </CardContent>
             </Card>
@@ -142,11 +353,11 @@ export default function ProjectDetails() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Due Date</span>
+                  <span className="text-sm font-medium">End Date</span>
                 </div>
-                <div className="text-lg font-semibold">{mockProject.dueDate}</div>
+                <div className="text-lg font-semibold">{formatDateDisplay(project.tentativeEndingDate)}</div>
                 <div className="text-sm text-muted-foreground">
-                  Started {mockProject.startDate}
+                  Started {formatDateDisplay(project.startingDate)}
                 </div>
               </CardContent>
             </Card>
@@ -154,14 +365,12 @@ export default function ProjectDetails() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Budget</span>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Tasks</span>
                 </div>
-                <div className="text-lg font-semibold">
-                  ${mockProject.spent.toLocaleString()} / ${mockProject.budget.toLocaleString()}
-                </div>
+                <div className="text-lg font-semibold">{project.taskCount}</div>
                 <div className="text-sm text-muted-foreground">
-                  {Math.round((mockProject.spent / mockProject.budget) * 100)}% spent
+                  Total tasks
                 </div>
               </CardContent>
             </Card>
@@ -172,9 +381,9 @@ export default function ProjectDetails() {
                   <Users className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Team Size</span>
                 </div>
-                <div className="text-lg font-semibold">{mockProject.team.length} members</div>
+                <div className="text-lg font-semibold">{project.teamMembers.length} members</div>
                 <div className="text-sm text-muted-foreground">
-                  Client: {mockProject.client}
+                  {project.orgName}
                 </div>
               </CardContent>
             </Card>
@@ -193,27 +402,46 @@ export default function ProjectDetails() {
 
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Tasks Overview */}
+              {/* Project Information */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Recent Tasks</CardTitle>
-                  <CardDescription>Track project progress and milestones</CardDescription>
+                  <CardTitle>Project Information</CardTitle>
+                  <CardDescription>Key details about this project</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {mockProject.tasks.map((task) => (
-                      <div key={task.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div>
-                          <h4 className="font-medium">{task.name}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Assigned to {task.assignee}
-                          </p>
-                        </div>
-                        <Badge className={getStatusColor(task.status)}>
-                          {task.status}
-                        </Badge>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <h4 className="font-medium">Order Number</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {project.orderNo}
+                        </p>
                       </div>
-                    ))}
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <h4 className="font-medium">EL1 Number</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {project.el1No}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <h4 className="font-medium">Project Code</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {project.projectCode || project.orderNo}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <h4 className="font-medium">Organization</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {project.orgName}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -225,32 +453,32 @@ export default function ProjectDetails() {
                   <CardDescription>Members working on this project</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {mockProject.team.map((member) => (
-                      <div key={member.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarImage src={member.avatar} />
-                            <AvatarFallback>
-                              {member.name.split(" ").map(n => n[0]).join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <h4 className="font-medium">{member.name}</h4>
-                            <p className="text-sm text-muted-foreground">{member.role}</p>
+                  {project.teamMembers.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No team members assigned yet
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {project.teamMembers.map((memberId, index) => (
+                        <div key={memberId || index} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Avatar>
+                              <AvatarFallback>
+                                {memberId.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <h4 className="font-medium">Team Member</h4>
+                              <p className="text-sm text-muted-foreground">ID: {memberId}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${
-                            member.status === "online" ? "bg-success" : "bg-muted-foreground"
-                          }`} />
                           <Button variant="ghost" size="sm">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -269,7 +497,10 @@ export default function ProjectDetails() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Attendance Sheets</h3>
-                    <Button className="bg-gradient-primary">
+                    <Button 
+                      className="bg-gradient-primary"
+                      onClick={() => setIsCreateSheetDialogOpen(true)}
+                    >
                       <Plus className="h-4 w-4 mr-2" />
                       Create New Sheet
                     </Button>
@@ -356,45 +587,177 @@ export default function ProjectDetails() {
                 <CardDescription>Manage project team members and assignments</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  {mockProject.team.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage src={member.avatar} />
-                          <AvatarFallback>
-                            {member.name.split(" ").map(n => n[0]).join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h4 className="font-semibold">{member.name}</h4>
-                          <p className="text-muted-foreground">{member.role}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className={`w-2 h-2 rounded-full ${
-                              member.status === "online" ? "bg-success" : "bg-muted-foreground"
-                            }`} />
-                            <span className="text-xs text-muted-foreground capitalize">
-                              {member.status}
-                            </span>
+                {project.teamMembers.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
+                    <p className="text-sm">
+                      No team members have been assigned to this project yet.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {project.teamMembers.map((memberId, index) => (
+                      <div key={memberId || index} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-12 w-12">
+                            <AvatarFallback>
+                              {memberId.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <h4 className="font-semibold">Team Member</h4>
+                            <p className="text-muted-foreground">ID: {memberId}</p>
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm">
+                            View Details
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm">
-                          View Details
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Create Attendance Sheet Dialog */}
+      <Dialog open={isCreateSheetDialogOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Attendance Sheet</DialogTitle>
+            <DialogDescription>
+              Fill in the details to create a new attendance sheet for this project.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-4">
+              {/* Month Year Field */}
+              <div className="space-y-2">
+                <Label htmlFor="monthYear">Month (Optional - will be auto-calculated from start date)</Label>
+                <Input
+                  id="monthYear"
+                  type="month"
+                  value={formData.monthYear}
+                  onChange={(e) => setFormData({ ...formData, monthYear: e.target.value })}
+                  placeholder="2025-06"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: YYYY-MM (e.g., 2025-06). If left empty, will be calculated from start date.
+                </p>
+              </div>
+
+              {/* Start Date Field */}
+              <div className="space-y-2">
+                <Label htmlFor="startDate">Start Date *</Label>
+                <Input
+                  id="startDate"
+                  type="date"
+                  value={formData.startDate}
+                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  required
+                />
+              </div>
+
+              {/* End Date Field */}
+              <div className="space-y-2">
+                <Label htmlFor="endDate">End Date *</Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  required
+                />
+              </div>
+
+              {/* Workers Selection */}
+              <div className="space-y-2">
+                <Label>Select Workers *</Label>
+                {isLoadingWorkers ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Loading workers...</span>
+                  </div>
+                ) : availableWorkers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No workers available.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto border rounded-lg p-4">
+                    {availableWorkers.map((worker) => (
+                      <div
+                        key={worker.id}
+                        className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted/50"
+                      >
+                        <Checkbox
+                          checked={selectedWorkerIds.has(worker.id)}
+                          onCheckedChange={(checked) => {
+                            toggleWorkerSelection(worker.id);
+                          }}
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium">{worker.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {worker.contactNumber && (
+                              <span>Contact: {worker.contactNumber}</span>
+                            )}
+                            {worker.uanNumber && (
+                              <span className="ml-2">UAN: {worker.uanNumber}</span>
+                            )}
+                          </div>
+                          {worker.tags && worker.tags.length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Tags: {worker.tags.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {selectedWorkerIds.size > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {selectedWorkerIds.size} worker(s) selected
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleDialogOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || selectedWorkerIds.size === 0 || !formData.startDate || !formData.endDate}
+                className="bg-gradient-primary"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Sheet"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
