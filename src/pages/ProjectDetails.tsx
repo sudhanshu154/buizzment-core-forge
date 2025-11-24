@@ -106,9 +106,56 @@ export default function ProjectDetails() {
     try {
       setIsLoadingAttendanceSheets(true);
       const sheets = await attendanceService.getAttendanceSheets(id);
-      setAttendanceSheets(sheets);
+      
+      // If API returns empty or no data, show dummy data
+      if (!sheets || sheets.length === 0) {
+        console.log('No attendance sheets found, showing dummy data');
+        setAttendanceSheets([
+          {
+            id: "dummy-1",
+            tenderId: id,
+            monthYear: "2025-01",
+            startDate: "01/01/2025",
+            endDate: "31/01/2025",
+            attendanceIds: ["att-1", "att-2", "att-3"],
+            createdAt: null
+          },
+          {
+            id: "dummy-2",
+            tenderId: id,
+            monthYear: "2025-02",
+            startDate: "01/02/2025",
+            endDate: "28/02/2025",
+            attendanceIds: ["att-4", "att-5"],
+            createdAt: null
+          }
+        ]);
+      } else {
+        setAttendanceSheets(sheets);
+      }
     } catch (error) {
       console.error('Failed to fetch attendance sheets:', error);
+      // On error, show dummy data
+      setAttendanceSheets([
+        {
+          id: "dummy-1",
+          tenderId: id || "",
+          monthYear: "2025-01",
+          startDate: "01/01/2025",
+          endDate: "31/01/2025",
+          attendanceIds: ["att-1", "att-2", "att-3"],
+          createdAt: null
+        },
+        {
+          id: "dummy-2",
+          tenderId: id || "",
+          monthYear: "2025-02",
+          startDate: "01/02/2025",
+          endDate: "28/02/2025",
+          attendanceIds: ["att-4", "att-5"],
+          createdAt: null
+        }
+      ]);
     } finally {
       setIsLoadingAttendanceSheets(false);
     }
