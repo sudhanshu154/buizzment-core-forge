@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -29,10 +29,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, FileDown, Printer, Plus, Loader2, Trash2, Edit } from "lucide-react";
+import { ArrowLeft, FileDown, Printer, Plus, Loader2, Trash2, Edit, Save } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { workerService } from "@/services/workerService";
-import { WorkerResponse } from "@/lib/api";
+import { projectService } from "@/services/projectService";
+import { attendanceService, AttendanceDataResponse } from "@/services/attendanceService";
+import { WorkerResponse, ProjectResponse } from "@/lib/api";
 
 // Mock data - will be replaced with actual API calls
 const mockAttendanceData = {
@@ -124,7 +126,14 @@ const calculateWorkerStats = (attendance: string[]) => {
 export default function AttendanceSheet() {
   const { id, sheetId } = useParams();
   const navigate = useNavigate();
+  
+  // Data state
   const [data, setData] = useState(mockAttendanceData);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [project, setProject] = useState<ProjectResponse | null>(null);
+  const [attendanceSheet, setAttendanceSheet] = useState<{ monthYear: string; startDate: string | null; endDate: string | null } | null>(null);
+  
   const [isAddWorkerDialogOpen, setIsAddWorkerDialogOpen] = useState(false);
   const [availableWorkers, setAvailableWorkers] = useState<WorkerResponse[]>([]);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<Set<string>>(new Set());
@@ -132,16 +141,149 @@ export default function AttendanceSheet() {
   
   // Change worker dialog state
   const [isChangeWorkerDialogOpen, setIsChangeWorkerDialogOpen] = useState(false);
-  const [workerToChange, setWorkerToChange] = useState<{ id: string; name: string } | null>(null);
+  const [workerToChange, setWorkerToChange] = useState<{ id: string; attendanceId?: string; name: string } | null>(null);
   const [availableWorkersForChange, setAvailableWorkersForChange] = useState<WorkerResponse[]>([]);
   const [selectedReplacementWorkerId, setSelectedReplacementWorkerId] = useState<string | null>(null);
   const [isLoadingWorkersForChange, setIsLoadingWorkersForChange] = useState(false);
+  const [isChangingWorker, setIsChangingWorker] = useState(false);
   
   // Remove worker confirmation dialog state
   const [isRemoveConfirmDialogOpen, setIsRemoveConfirmDialogOpen] = useState(false);
-  const [workerToRemove, setWorkerToRemove] = useState<{ id: string; name: string } | null>(null);
+  const [workerToRemove, setWorkerToRemove] = useState<{ id: string; attendanceId?: string; name: string } | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+  
+  // Save state
+  const [isSaving, setIsSaving] = useState(false);
   
   const dateColumns = generateDateColumns(data.startDate, data.endDate);
+  
+  // Fetch attendance data
+  const fetchAttendanceData = useCallback(async () => {
+    if (!id) {
+      setError('No project ID provided');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const orgId = localStorage.getItem('selectedOrgId');
+      if (!orgId) {
+        setError('No organization selected');
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch project details
+      const projectData = await projectService.getProject(orgId, id);
+      setProject(projectData);
+
+      // Fetch attendance sheets to get the sheet details
+      const sheets = await attendanceService.getAttendanceSheets(id);
+      const currentSheet = sheets.find(s => s.id === sheetId);
+      
+      if (!currentSheet) {
+        setError('Attendance sheet not found');
+        setIsLoading(false);
+        return;
+      }
+
+      setAttendanceSheet(currentSheet);
+      const monthYear = currentSheet.monthYear;
+
+      // Fetch attendance data
+      const attendanceData = await attendanceService.getAttendanceData(id, monthYear);
+
+      // Fetch all workers to get names and designations
+      const allWorkers = await workerService.getWorkers(orgId);
+      const workerMap = new Map(allWorkers.map(w => [w.id, w]));
+
+      // Calculate start and end dates
+      let startDate = currentSheet.startDate;
+      let endDate = currentSheet.endDate;
+      
+      // If dates are not available, calculate from monthYear
+      if (!startDate || !endDate) {
+        const [year, month] = monthYear.split('-');
+        startDate = `${year}-${month}-01`;
+        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+        endDate = `${year}-${month}-${lastDay}`;
+      } else if (startDate.includes('/')) {
+        // Convert DD/MM/YYYY to YYYY-MM-DD
+        const [day, month, year] = startDate.split('/');
+        startDate = `${year}-${month}-${day}`;
+      }
+      if (endDate && endDate.includes('/')) {
+        const [day, month, year] = endDate.split('/');
+        endDate = `${year}-${month}-${day}`;
+      }
+
+      // Generate date columns
+      const dates = generateDateColumns(startDate, endDate);
+      
+      // Create a map of date strings to indices for quick lookup
+      const dateIndexMap = new Map<string, number>();
+      dates.forEach((dateCol, index) => {
+        const year = monthYear.split('-')[0];
+        const dateStr = `${year}-${String(dateCol.month).padStart(2, '0')}-${String(dateCol.day).padStart(2, '0')}`;
+        dateIndexMap.set(dateStr, index);
+      });
+      
+      // Transform attendance data to match component format
+      const transformedWorkers = attendanceData.attendances.map(attendance => {
+        const worker = workerMap.get(attendance.workerId);
+        const workerName = worker?.name.toUpperCase() || `Worker ${attendance.workerId.substring(0, 8)}`;
+        const designation = worker?.tags?.[0] || "Unskilled";
+        
+        // Initialize attendance array with "O" (Off) for all dates
+        const attendanceArray = new Array(dates.length).fill("O");
+        
+        // Fill in the attendance records from dailyRecords
+        Object.entries(attendance.dailyRecords).forEach(([dateStr, status]) => {
+          const index = dateIndexMap.get(dateStr);
+          if (index !== undefined) {
+            attendanceArray[index] = status;
+          }
+        });
+
+        return {
+          id: attendance.workerId,
+          attendanceId: attendance.id, // Store the attendance record ID for API calls
+          name: workerName,
+          designation: designation,
+          attendance: attendanceArray,
+          present: attendance.presentDays,
+          ncp: attendance.absentDays
+        };
+      });
+
+      // Update data state
+      setData({
+        sheetId: sheetId || "",
+        projectName: projectData.orgName || projectData.name,
+        location: "", // Not available in API
+        workOrder: "", // Not available in API
+        loaNumber: "", // Not available in API
+        orderNumber: projectData.orderNo || "",
+        startDate: startDate,
+        endDate: endDate || startDate,
+        workers: transformedWorkers
+      });
+
+    } catch (err) {
+      console.error('Failed to fetch attendance data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load attendance data');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, sheetId]);
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetchAttendanceData();
+  }, [fetchAttendanceData]);
   
   // Fetch workers from API
   const fetchWorkers = async () => {
@@ -211,28 +353,61 @@ export default function AttendanceSheet() {
   };
   
   // Open remove confirmation dialog
-  const openRemoveConfirmDialog = (workerId: string, workerName: string) => {
-    setWorkerToRemove({ id: workerId, name: workerName });
+  const openRemoveConfirmDialog = (workerId: string, workerName: string, attendanceId?: string) => {
+    setWorkerToRemove({ id: workerId, attendanceId, name: workerName });
     setIsRemoveConfirmDialogOpen(true);
   };
-  
+
   // Confirm and remove worker from attendance sheet
-  const confirmRemoveWorker = () => {
-    if (!workerToRemove) return;
-    
-    setData(prevData => ({
-      ...prevData,
-      workers: prevData.workers.filter(w => w.id !== workerToRemove.id)
-    }));
-    
-    // Reset and close dialog
-    setWorkerToRemove(null);
-    setIsRemoveConfirmDialogOpen(false);
+  const confirmRemoveWorker = async () => {
+    if (!workerToRemove || !sheetId) {
+      alert('Missing worker information or sheet ID');
+      return;
+    }
+
+    // If there's no attendanceId, it means the worker was just added and hasn't been saved yet
+    // In this case, we can just remove it from the local state
+    if (!workerToRemove.attendanceId) {
+      setData(prevData => ({
+        ...prevData,
+        workers: prevData.workers.filter(w => w.id !== workerToRemove.id)
+      }));
+      
+      // Reset and close dialog
+      setWorkerToRemove(null);
+      setIsRemoveConfirmDialogOpen(false);
+      return;
+    }
+
+    try {
+      setIsRemoving(true);
+
+      // Call the API to remove the worker
+      await attendanceService.removeWorker(workerToRemove.attendanceId, sheetId);
+
+      // Remove from local state
+      setData(prevData => ({
+        ...prevData,
+        workers: prevData.workers.filter(w => w.id !== workerToRemove.id)
+      }));
+
+      // Reset and close dialog
+      setWorkerToRemove(null);
+      setIsRemoveConfirmDialogOpen(false);
+
+      alert('Worker removed successfully!');
+    } catch (error) {
+      console.error('Failed to remove worker:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to remove worker';
+      alert(`Failed to remove worker: ${errorMessage}`);
+    } finally {
+      setIsRemoving(false);
+    }
   };
   
   // Open change worker dialog
-  const openChangeWorkerDialog = (workerId: string, workerName: string) => {
-    setWorkerToChange({ id: workerId, name: workerName });
+  const openChangeWorkerDialog = (workerId: string, workerName: string, attendanceId?: string) => {
+    setWorkerToChange({ id: workerId, attendanceId, name: workerName });
     setIsChangeWorkerDialogOpen(true);
   };
   
@@ -267,7 +442,7 @@ export default function AttendanceSheet() {
   }, [isChangeWorkerDialogOpen, workerToChange]);
   
   // Replace worker - replace existing worker with new one
-  const replaceWorker = () => {
+  const replaceWorker = async () => {
     if (!workerToChange || !selectedReplacementWorkerId) {
       return;
     }
@@ -276,33 +451,82 @@ export default function AttendanceSheet() {
     if (!replacementWorker) {
       return;
     }
-    
-    setData(prevData => {
-      const updatedWorkers = prevData.workers.map(worker => {
-        if (worker.id === workerToChange.id) {
-          // Replace worker but keep the attendance data
-          return {
-            id: replacementWorker.id,
-            name: replacementWorker.name.toUpperCase(),
-            designation: replacementWorker.tags?.[0] || worker.designation,
-            attendance: worker.attendance, // Keep existing attendance
-            present: worker.present, // Keep existing stats
-            ncp: worker.ncp
-          };
-        }
-        return worker;
+
+    // If there's no attendanceId, it means the worker was just added and hasn't been saved yet
+    // In this case, we can just update the local state
+    if (!workerToChange.attendanceId) {
+      setData(prevData => {
+        const updatedWorkers = prevData.workers.map(worker => {
+          if (worker.id === workerToChange.id) {
+            // Replace worker but keep the attendance data
+            return {
+              id: replacementWorker.id,
+              name: replacementWorker.name.toUpperCase(),
+              designation: replacementWorker.tags?.[0] || worker.designation,
+              attendance: worker.attendance, // Keep existing attendance
+              present: worker.present, // Keep existing stats
+              ncp: worker.ncp
+            };
+          }
+          return worker;
+        });
+        
+        return {
+          ...prevData,
+          workers: updatedWorkers
+        };
       });
       
-      return {
-        ...prevData,
-        workers: updatedWorkers
-      };
-    });
-    
-    // Reset and close dialog
-    setWorkerToChange(null);
-    setSelectedReplacementWorkerId(null);
-    setIsChangeWorkerDialogOpen(false);
+      // Reset and close dialog
+      setWorkerToChange(null);
+      setSelectedReplacementWorkerId(null);
+      setIsChangeWorkerDialogOpen(false);
+      return;
+    }
+
+    try {
+      setIsChangingWorker(true);
+
+      // Call the API to change the worker
+      await attendanceService.changeWorker(workerToChange.attendanceId, selectedReplacementWorkerId);
+
+      // Update local state
+      setData(prevData => {
+        const updatedWorkers = prevData.workers.map(worker => {
+          if (worker.id === workerToChange.id) {
+            // Replace worker but keep the attendance data
+            return {
+              id: replacementWorker.id,
+              attendanceId: workerToChange.attendanceId, // Keep the same attendance record ID
+              name: replacementWorker.name.toUpperCase(),
+              designation: replacementWorker.tags?.[0] || worker.designation,
+              attendance: worker.attendance, // Keep existing attendance
+              present: worker.present, // Keep existing stats
+              ncp: worker.ncp
+            };
+          }
+          return worker;
+        });
+        
+        return {
+          ...prevData,
+          workers: updatedWorkers
+        };
+      });
+      
+      // Reset and close dialog
+      setWorkerToChange(null);
+      setSelectedReplacementWorkerId(null);
+      setIsChangeWorkerDialogOpen(false);
+
+      alert('Worker changed successfully!');
+    } catch (error) {
+      console.error('Failed to change worker:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to change worker';
+      alert(`Failed to change worker: ${errorMessage}`);
+    } finally {
+      setIsChangingWorker(false);
+    }
   };
   
   // Update attendance status when user types P, A, or O
@@ -373,6 +597,97 @@ export default function AttendanceSheet() {
     return { totalPresent: present, totalNCP: ncp, totalAttendance: attendance };
   }, [data.workers, dateColumns]);
 
+  // Save attendance changes
+  const handleSave = async () => {
+    if (!id || !sheetId) {
+      alert('Missing project ID or sheet ID');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // Generate date strings for each column (matching the format used in fetchAttendanceData)
+      const year = attendanceSheet?.monthYear 
+        ? attendanceSheet.monthYear.split('-')[0] 
+        : new Date(data.startDate).getFullYear().toString();
+      
+      const dateStrings = dateColumns.map((dateCol) => {
+        const month = String(dateCol.month).padStart(2, '0');
+        const day = String(dateCol.day).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      });
+
+      // Build workerAttendance object
+      const workerAttendance: Record<string, Record<string, string>> = {};
+      
+      data.workers.forEach((worker) => {
+        const workerRecords: Record<string, string> = {};
+        
+        worker.attendance.forEach((status, index) => {
+          const dateStr = dateStrings[index];
+          if (dateStr && status) {
+            // Only include non-empty statuses (P, A, or O)
+            workerRecords[dateStr] = status;
+          }
+        });
+        
+        if (Object.keys(workerRecords).length > 0) {
+          workerAttendance[worker.id] = workerRecords;
+        }
+      });
+
+      // Prepare the request payload
+      const payload = {
+        tenderId: id,
+        attendanceSheetId: sheetId,
+        workerAttendance: workerAttendance
+      };
+
+      console.log('Saving attendance data:', payload);
+
+      // Call the API
+      await attendanceService.bulkUpdateAttendance(payload);
+
+      alert('Attendance saved successfully!');
+    } catch (error) {
+      console.error('Failed to save attendance:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save attendance';
+      alert(`Failed to save attendance: ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading attendance sheet...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-error">Error</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate(`/project/${id}`)} className="w-full">
+              Return to Project
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -399,6 +714,25 @@ export default function AttendanceSheet() {
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Workers
+            </Button>
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="bg-gradient-primary"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </>
+              )}
             </Button>
             <Button variant="outline" size="sm">
               <FileDown className="h-4 w-4 mr-2" />
@@ -511,7 +845,10 @@ export default function AttendanceSheet() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                            onClick={() => openChangeWorkerDialog(worker.id, worker.name)}
+                            onClick={() => {
+                              const workerWithAttendance = worker as { id: string; name: string; attendanceId?: string; designation: string; attendance: string[]; present: number; ncp: number };
+                              openChangeWorkerDialog(workerWithAttendance.id, workerWithAttendance.name, workerWithAttendance.attendanceId);
+                            }}
                             title="Change worker"
                           >
                             <Edit className="h-4 w-4" />
@@ -520,7 +857,10 @@ export default function AttendanceSheet() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            onClick={() => openRemoveConfirmDialog(worker.id, worker.name)}
+                            onClick={() => {
+                              const workerWithAttendance = worker as { id: string; name: string; attendanceId?: string; designation: string; attendance: string[]; present: number; ncp: number };
+                              openRemoveConfirmDialog(workerWithAttendance.id, workerWithAttendance.name, workerWithAttendance.attendanceId);
+                            }}
                             title="Remove worker"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -639,15 +979,23 @@ export default function AttendanceSheet() {
                 setWorkerToChange(null);
                 setSelectedReplacementWorkerId(null);
               }}
+              disabled={isChangingWorker}
             >
               Cancel
             </Button>
             <Button
               onClick={replaceWorker}
-              disabled={!selectedReplacementWorkerId || isLoadingWorkersForChange}
+              disabled={!selectedReplacementWorkerId || isLoadingWorkersForChange || isChangingWorker}
               className="bg-gradient-primary"
             >
-              Change Worker
+              {isChangingWorker ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Changing...
+                </>
+              ) : (
+                'Change Worker'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -663,17 +1011,28 @@ export default function AttendanceSheet() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setIsRemoveConfirmDialogOpen(false);
-              setWorkerToRemove(null);
-            }}>
+            <AlertDialogCancel 
+              onClick={() => {
+                setIsRemoveConfirmDialogOpen(false);
+                setWorkerToRemove(null);
+              }}
+              disabled={isRemoving}
+            >
               No, Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmRemoveWorker}
+              disabled={isRemoving}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Yes, Remove
+              {isRemoving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                'Yes, Remove'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

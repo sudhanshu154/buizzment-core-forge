@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { workerService } from "@/services/workerService";
-import { attendanceService } from "@/services/attendanceService";
+import { attendanceService, AttendanceSheetResponse } from "@/services/attendanceService";
 import { projectService } from "@/services/projectService";
 import { WorkerResponse, ProjectResponse } from "@/lib/api";
 
@@ -47,6 +47,10 @@ export default function ProjectDetails() {
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [projectError, setProjectError] = useState<string | null>(null);
+  
+  // Attendance sheets state
+  const [attendanceSheets, setAttendanceSheets] = useState<AttendanceSheetResponse[]>([]);
+  const [isLoadingAttendanceSheets, setIsLoadingAttendanceSheets] = useState(false);
   
   // Create attendance sheet dialog state
   const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
@@ -94,6 +98,28 @@ export default function ProjectDetails() {
   useEffect(() => {
     fetchProject();
   }, [fetchProject]);
+
+  // Fetch attendance sheets
+  const fetchAttendanceSheets = useCallback(async () => {
+    if (!id) return;
+
+    try {
+      setIsLoadingAttendanceSheets(true);
+      const sheets = await attendanceService.getAttendanceSheets(id);
+      setAttendanceSheets(sheets);
+    } catch (error) {
+      console.error('Failed to fetch attendance sheets:', error);
+    } finally {
+      setIsLoadingAttendanceSheets(false);
+    }
+  }, [id]);
+
+  // Fetch attendance sheets when project is loaded or when attendance tab is active
+  useEffect(() => {
+    if (project && activeTab === 'attendance') {
+      fetchAttendanceSheets();
+    }
+  }, [project, activeTab, fetchAttendanceSheets]);
   
   // Fetch workers from API
   const fetchWorkers = useCallback(async () => {
@@ -202,9 +228,11 @@ export default function ProjectDetails() {
       setSelectedWorkerIds(new Set());
       setIsCreateSheetDialogOpen(false);
       
-      // Optionally refresh the page or show success message
+      // Refresh attendance sheets list
+      await fetchAttendanceSheets();
+      
+      // Show success message
       alert("Attendance sheet created successfully!");
-      // You might want to refresh the attendance sheets list here
       
     } catch (error) {
       console.error('❌ Failed to create attendance sheet:', error);
@@ -251,6 +279,51 @@ export default function ProjectDetails() {
   // Format date for display
   const formatDateDisplay = (dateString: string): string => {
     if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  // Format month year for display
+  const formatMonthYear = (monthYear: string): string => {
+    if (!monthYear) return "N/A";
+    const [year, month] = monthYear.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+  };
+
+  // Parse date from DD/MM/YYYY or ISO format
+  const parseDate = (dateString: string | null): Date | null => {
+    if (!dateString) return null;
+    // Check if it's in DD/MM/YYYY format
+    if (dateString.includes('/')) {
+      const [day, month, year] = dateString.split('/');
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+    // Otherwise try to parse as ISO date
+    return new Date(dateString);
+  };
+
+  // Calculate total days between two dates
+  const calculateTotalDays = (startDate: string | null, endDate: string | null): number => {
+    if (!startDate || !endDate) return 0;
+    const start = parseDate(startDate);
+    const end = parseDate(endDate);
+    if (!start || !end) return 0;
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays + 1; // +1 to include both start and end dates
+  };
+
+  // Format date from DD/MM/YYYY to display format
+  const formatDateFromDDMMYYYY = (dateString: string | null): string => {
+    if (!dateString) return "N/A";
+    // Check if it's already in DD/MM/YYYY format
+    if (dateString.includes('/')) {
+      const [day, month, year] = dateString.split('/');
+      const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    // Otherwise try to parse as ISO date
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
@@ -506,24 +579,58 @@ export default function ProjectDetails() {
                     </Button>
                   </div>
                   
-                  <div className="grid gap-4">
-                    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/project/${id}/attendance/sheet-1`)}>
-                      <CardContent className="pt-6">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <h4 className="font-semibold mb-1">July-August 2025 Attendance</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Period: 24/07/2025 - 23/08/2025
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Workers: 6 | Total Days: 31
-                            </p>
-                          </div>
-                          <Badge className="bg-success text-success-foreground">Active</Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                  {isLoadingAttendanceSheets ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      <span>Loading attendance sheets...</span>
+                    </div>
+                  ) : attendanceSheets.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <UserCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">No Attendance Sheets</h3>
+                      <p className="text-sm">
+                        No attendance sheets have been created for this project yet.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {attendanceSheets.map((sheet) => {
+                        const totalDays = calculateTotalDays(sheet.startDate, sheet.endDate);
+                        const workerCount = sheet.attendanceIds?.length || 0;
+                        
+                        return (
+                          <Card 
+                            key={sheet.id} 
+                            className="hover:shadow-md transition-shadow cursor-pointer" 
+                            onClick={() => navigate(`/project/${id}/attendance/${sheet.id}`)}
+                          >
+                            <CardContent className="pt-6">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-semibold mb-1">
+                                    {formatMonthYear(sheet.monthYear)} Attendance
+                                  </h4>
+                                  {sheet.startDate && sheet.endDate ? (
+                                    <p className="text-sm text-muted-foreground">
+                                      Period: {formatDateFromDDMMYYYY(sheet.startDate)} - {formatDateFromDDMMYYYY(sheet.endDate)}
+                                    </p>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                      Month: {formatMonthYear(sheet.monthYear)}
+                                    </p>
+                                  )}
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    Workers: {workerCount} {totalDays > 0 && `| Total Days: ${totalDays}`}
+                                  </p>
+                                </div>
+                                <Badge className="bg-success text-success-foreground">Active</Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

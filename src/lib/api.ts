@@ -367,9 +367,72 @@ class ApiClient {
         id: `attendance-${Date.now()}`,
         tenderId: requestData.tenderId || '',
         monthYear: requestData.monthYear || '',
-        startDate: requestData.startDate || '',
-        endDate: requestData.endDate || '',
+        startDate: requestData.startDate || null,
+        endDate: requestData.endDate || null,
+        attendanceIds: [],
         createdAt: new Date().toISOString(),
+      } as T;
+    }
+
+    // Handle GET /attendances/<tenderId>
+    if (method === 'GET' && endpoint.startsWith('/attendances/') && !endpoint.includes('/tender/')) {
+      const tenderId = endpoint.split('/attendances/')[1];
+      // Return mock attendance sheets for the tender
+      return [
+        {
+          id: `attendance-sheet-${Date.now()}`,
+          tenderId: tenderId,
+          monthYear: '2025-06',
+          startDate: '01/06/2025',
+          endDate: '30/06/2025',
+          attendanceIds: ['att-1', 'att-2'],
+          createdAt: new Date().toISOString(),
+        }
+      ] as T;
+    }
+
+    // Handle GET /attendances/tender/<tenderId>/month/<monthYear>
+    if (method === 'GET' && endpoint.includes('/attendances/tender/') && endpoint.includes('/month/')) {
+      const parts = endpoint.split('/');
+      const tenderIdIndex = parts.indexOf('tender');
+      const monthIndex = parts.indexOf('month');
+      const tenderId = parts[tenderIdIndex + 1];
+      const monthYear = parts[monthIndex + 1];
+      
+      // Return mock attendance data
+      return {
+        id: null,
+        tenderId: tenderId,
+        monthYear: monthYear,
+        attendances: [
+          {
+            id: `attendance-${Date.now()}-1`,
+            workerId: 'worker-1',
+            dailyRecords: {
+              '2025-06-15': 'P',
+              '2025-06-16': 'A',
+              '2025-06-17': 'P',
+              '2025-06-18': 'P',
+              '2025-06-19': 'A',
+            },
+            presentDays: 3,
+            absentDays: 2,
+          },
+          {
+            id: `attendance-${Date.now()}-2`,
+            workerId: 'worker-2',
+            dailyRecords: {
+              '2025-06-15': 'A',
+              '2025-06-16': 'P',
+              '2025-06-18': 'A',
+              '2025-06-19': 'P',
+              '2025-06-20': 'P',
+            },
+            presentDays: 3,
+            absentDays: 2,
+          },
+        ],
+        totalRecords: 2,
       } as T;
     }
 
