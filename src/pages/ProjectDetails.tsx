@@ -741,7 +741,7 @@ export default function ProjectDetails() {
                 <CardDescription>Manage project team members and assignments</CardDescription>
               </CardHeader>
               <CardContent>
-                {project.teamMembers.length === 0 ? (
+                {!project.teamMembers || project.teamMembers.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
