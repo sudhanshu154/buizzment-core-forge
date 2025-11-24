@@ -501,7 +501,7 @@ export default function ProjectDetails() {
                   <Users className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Team Size</span>
                 </div>
-                <div className="text-lg font-semibold">{project.teamMembers.length} members</div>
+                <div className="text-lg font-semibold">{project.teamMembers?.length || 0} members</div>
                 <div className="text-sm text-muted-foreground">
                   {project.orgName}
                 </div>
@@ -573,7 +573,7 @@ export default function ProjectDetails() {
                   <CardDescription>Members working on this project</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {project.teamMembers.length === 0 ? (
+                  {!project.teamMembers || project.teamMembers.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       No team members assigned yet
                     </div>
