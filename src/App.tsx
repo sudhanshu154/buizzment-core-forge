@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import ProjectDetails from "./pages/ProjectDetails";
 import AttendanceSheet from "./pages/AttendanceSheet";
+import PaymentSheet from "./pages/PaymentSheet";
 import WorkerManagement from "./pages/WorkerManagement";
 import NotFound from "./pages/NotFound";
 
@@ -23,6 +24,7 @@ const App = () => (
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/project/:id" element={<ProjectDetails />} />
         <Route path="/project/:id/attendance/:sheetId" element={<AttendanceSheet />} />
+        <Route path="/project/:id/payment/:monthYear" element={<PaymentSheet />} />
         <Route path="/workers" element={<WorkerManagement />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
