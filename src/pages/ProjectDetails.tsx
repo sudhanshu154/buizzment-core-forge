@@ -161,9 +161,9 @@ export default function ProjectDetails() {
     }
   }, [id]);
 
-  // Fetch attendance sheets when project is loaded or when attendance tab is active
+  // Fetch attendance sheets when project is loaded or when attendance/payments tab is active
   useEffect(() => {
-    if (project && activeTab === 'attendance') {
+    if (project && (activeTab === 'attendance' || activeTab === 'payments')) {
       fetchAttendanceSheets();
     }
   }, [project, activeTab, fetchAttendanceSheets]);
@@ -690,18 +690,66 @@ export default function ProjectDetails() {
                   <DollarSign className="h-5 w-5" />
                   Payment Management
                 </CardTitle>
-                <CardDescription>Manage project payments and invoices</CardDescription>
+                <CardDescription>View and manage payment sheets for attendance records</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Payment Sheets</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Generate invoices, track payments, and manage project finances.
-                  </p>
-                  <Button className="bg-gradient-primary">
-                    Manage Payments
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">Payment Sheets</h3>
+                  </div>
+                  
+                  {isLoadingAttendanceSheets ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      <span>Loading payment sheets...</span>
+                    </div>
+                  ) : attendanceSheets.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-semibold mb-2">No Payment Sheets</h3>
+                      <p className="text-sm">
+                        Payment sheets are created from attendance sheets. Create an attendance sheet first.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {attendanceSheets.map((sheet) => {
+                        const totalDays = calculateTotalDays(sheet.startDate, sheet.endDate);
+                        const workerCount = sheet.attendanceIds?.length || 0;
+                        
+                        return (
+                          <Card 
+                            key={sheet.id} 
+                            className="hover:shadow-md transition-shadow cursor-pointer" 
+                            onClick={() => navigate(`/project/${id}/payment/${sheet.monthYear}`)}
+                          >
+                            <CardContent className="pt-6">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-semibold mb-1">
+                                    {formatMonthYear(sheet.monthYear)} Payment Sheet
+                                  </h4>
+                                  {sheet.startDate && sheet.endDate ? (
+                                    <p className="text-sm text-muted-foreground">
+                                      Period: {formatDateFromDDMMYYYY(sheet.startDate)} - {formatDateFromDDMMYYYY(sheet.endDate)}
+                                    </p>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                      Month: {formatMonthYear(sheet.monthYear)}
+                                    </p>
+                                  )}
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    Workers: {workerCount} {totalDays > 0 && `| Total Days: ${totalDays}`}
+                                  </p>
+                                </div>
+                                <Badge className="bg-primary text-primary-foreground">View Payment</Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
