@@ -33,10 +33,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { projectService } from "@/services/projectService";
 import { CreateProjectRequest, CreateWorkerRequest } from "@/lib/api";
 import { workerService } from "@/services/workerService";
 
+const DESIGNATION_OPTIONS = ['High Skilled', 'Skilled', 'UnSkilled'] as const;
+type DesignationOption = (typeof DESIGNATION_OPTIONS)[number];
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -63,6 +66,7 @@ export default function Dashboard() {
     name: "",
     uanNumber: "",
     contactNumber: "",
+    designation: "UnSkilled",
     tags: [],
     tagsString: "",
     orgIds: [],
@@ -183,6 +187,7 @@ export default function Dashboard() {
         name: workerFormData.name,
         uanNumber: workerFormData.uanNumber,
         contactNumber: workerFormData.contactNumber || undefined,
+        designation: workerFormData.designation,
         tags: tags.length > 0 ? tags : undefined,
         org_ids: [orgId], // API expects snake_case
       };
@@ -224,6 +229,7 @@ export default function Dashboard() {
         name: "",
         uanNumber: "",
         contactNumber: "",
+        designation: "UnSkilled",
         tags: [],
         tagsString: "",
         orgIds: [],
@@ -255,6 +261,7 @@ export default function Dashboard() {
         name: "",
         uanNumber: "",
         contactNumber: "",
+        designation: "UnSkilled",
         tags: [],
         tagsString: "",
         orgIds: [],
@@ -709,6 +716,28 @@ export default function Dashboard() {
                   onChange={(e) => setWorkerFormData({ ...workerFormData, contactNumber: e.target.value })}
                   placeholder="e.g., 9999999999"
                 />
+              </div>
+
+              {/* Designation */}
+              <div className="space-y-2">
+                <Label htmlFor="designation">Designation *</Label>
+                <Select
+                  value={workerFormData.designation || DESIGNATION_OPTIONS[2]}
+                  onValueChange={(value) =>
+                    setWorkerFormData({ ...workerFormData, designation: value as DesignationOption })
+                  }
+                >
+                  <SelectTrigger id="designation">
+                    <SelectValue placeholder="Select designation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DESIGNATION_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Tags */}

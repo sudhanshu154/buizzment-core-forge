@@ -83,12 +83,14 @@ export default function PaymentSheet() {
         // Generate payment records
         const records: PaymentRecord[] = attendance.attendances.map((att, index) => {
           const worker = workersMap[att.workerId];
-          // Determine skill level based on worker tags or default to UnSkilled
+          // Determine skill level based on worker designation or default to UnSkilled
           let designation: SkillLevel = 'UnSkilled';
-          if (worker?.tags?.includes('high-skilled') || worker?.tags?.includes('supervisor')) {
-            designation = 'High Skilled';
-          } else if (worker?.tags?.includes('skilled') || worker?.tags?.includes('operator')) {
-            designation = 'Skilled';
+
+          if (worker?.designation) {
+            // Check if the designation is a valid SkillLevel
+            if (Object.keys(SKILL_RATES).includes(worker.designation)) {
+              designation = worker.designation as SkillLevel;
+            }
           }
 
           const totalDays = att.presentDays;
@@ -239,9 +241,9 @@ export default function PaymentSheet() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Project
           </Button>
-          
+
           <Logo size="sm" />
-          
+
           <div className="ml-auto flex items-center space-x-2">
             <Button variant="outline" size="sm" onClick={handlePrint}>
               <Printer className="h-4 w-4 mr-2" />
@@ -313,7 +315,7 @@ export default function PaymentSheet() {
                       <TableCell className="text-center border">{record.ncpDays}</TableCell>
                     </TableRow>
                   ))}
-                  
+
                   {/* Total Row */}
                   <TableRow className="bg-muted font-bold">
                     <TableCell className="border" colSpan={3}>Total</TableCell>

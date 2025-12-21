@@ -103,7 +103,7 @@ const generateDateColumns = (startDate: string, endDate: string) => {
   const dates = [];
   const start = new Date(startDate);
   const end = new Date(endDate);
-  
+
   let current = new Date(start);
   while (current <= end) {
     dates.push({
@@ -112,7 +112,7 @@ const generateDateColumns = (startDate: string, endDate: string) => {
     });
     current.setDate(current.getDate() + 1);
   }
-  
+
   return dates;
 };
 
@@ -126,19 +126,19 @@ const calculateWorkerStats = (attendance: string[]) => {
 export default function AttendanceSheet() {
   const { id, sheetId } = useParams();
   const navigate = useNavigate();
-  
+
   // Data state
   const [data, setData] = useState(mockAttendanceData);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [attendanceSheet, setAttendanceSheet] = useState<{ monthYear: string; startDate: string | null; endDate: string | null } | null>(null);
-  
+
   const [isAddWorkerDialogOpen, setIsAddWorkerDialogOpen] = useState(false);
   const [availableWorkers, setAvailableWorkers] = useState<WorkerResponse[]>([]);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<Set<string>>(new Set());
   const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
-  
+
   // Change worker dialog state
   const [isChangeWorkerDialogOpen, setIsChangeWorkerDialogOpen] = useState(false);
   const [workerToChange, setWorkerToChange] = useState<{ id: string; attendanceId?: string; name: string } | null>(null);
@@ -146,17 +146,17 @@ export default function AttendanceSheet() {
   const [selectedReplacementWorkerId, setSelectedReplacementWorkerId] = useState<string | null>(null);
   const [isLoadingWorkersForChange, setIsLoadingWorkersForChange] = useState(false);
   const [isChangingWorker, setIsChangingWorker] = useState(false);
-  
+
   // Remove worker confirmation dialog state
   const [isRemoveConfirmDialogOpen, setIsRemoveConfirmDialogOpen] = useState(false);
   const [workerToRemove, setWorkerToRemove] = useState<{ id: string; attendanceId?: string; name: string } | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
-  
+
   // Save state
   const [isSaving, setIsSaving] = useState(false);
-  
+
   const dateColumns = generateDateColumns(data.startDate, data.endDate);
-  
+
   // Fetch attendance data
   const fetchAttendanceData = useCallback(async () => {
     if (!id) {
@@ -168,7 +168,7 @@ export default function AttendanceSheet() {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       const orgId = localStorage.getItem('selectedOrgId');
       if (!orgId) {
         setError('No organization selected');
@@ -183,7 +183,7 @@ export default function AttendanceSheet() {
       // Fetch attendance sheets to get the sheet details
       const sheets = await attendanceService.getAttendanceSheets(id);
       const currentSheet = sheets.find(s => s.id === sheetId);
-      
+
       if (!currentSheet) {
         setError('Attendance sheet not found');
         setIsLoading(false);
@@ -203,7 +203,7 @@ export default function AttendanceSheet() {
       // Calculate start and end dates
       let startDate = currentSheet.startDate;
       let endDate = currentSheet.endDate;
-      
+
       // If dates are not available, calculate from monthYear
       if (!startDate || !endDate) {
         const [year, month] = monthYear.split('-');
@@ -222,7 +222,7 @@ export default function AttendanceSheet() {
 
       // Generate date columns
       const dates = generateDateColumns(startDate, endDate);
-      
+
       // Create a map of date strings to indices for quick lookup
       const dateIndexMap = new Map<string, number>();
       dates.forEach((dateCol, index) => {
@@ -230,16 +230,16 @@ export default function AttendanceSheet() {
         const dateStr = `${year}-${String(dateCol.month).padStart(2, '0')}-${String(dateCol.day).padStart(2, '0')}`;
         dateIndexMap.set(dateStr, index);
       });
-      
+
       // Transform attendance data to match component format
       const transformedWorkers = attendanceData.attendances.map(attendance => {
         const worker = workerMap.get(attendance.workerId);
         const workerName = worker?.name.toUpperCase() || `Worker ${attendance.workerId.substring(0, 8)}`;
-        const designation = worker?.tags?.[0] || "Unskilled";
-        
+        const designation = worker?.designation || "Unskilled";
+
         // Initialize attendance array with "O" (Off) for all dates
         const attendanceArray = new Array(dates.length).fill("O");
-        
+
         // Fill in the attendance records from dailyRecords
         Object.entries(attendance.dailyRecords).forEach(([dateStr, status]) => {
           const index = dateIndexMap.get(dateStr);
@@ -284,7 +284,7 @@ export default function AttendanceSheet() {
   useEffect(() => {
     fetchAttendanceData();
   }, [fetchAttendanceData]);
-  
+
   // Fetch workers from API
   const fetchWorkers = async () => {
     try {
@@ -294,7 +294,7 @@ export default function AttendanceSheet() {
         console.error('No organization ID found');
         return;
       }
-      
+
       const workers = await workerService.getWorkers(orgId);
       // Filter out workers that are already in the attendance sheet
       const existingWorkerIds = new Set(data.workers.map(w => w.id));
@@ -306,7 +306,7 @@ export default function AttendanceSheet() {
       setIsLoadingWorkers(false);
     }
   };
-  
+
   // Fetch workers when dialog opens
   useEffect(() => {
     if (isAddWorkerDialogOpen) {
@@ -314,7 +314,7 @@ export default function AttendanceSheet() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAddWorkerDialogOpen]);
-  
+
   // Toggle worker selection
   const toggleWorkerSelection = (workerId: string) => {
     setSelectedWorkerIds(prev => {
@@ -327,31 +327,31 @@ export default function AttendanceSheet() {
       return newSet;
     });
   };
-  
+
   // Add selected workers to attendance sheet
   const addSelectedWorkers = () => {
     const selectedWorkers = availableWorkers.filter(w => selectedWorkerIds.has(w.id));
     const numDays = dateColumns.length;
-    
+
     const newWorkers = selectedWorkers.map(worker => ({
       id: worker.id,
       name: worker.name.toUpperCase(),
-      designation: worker.tags?.[0] || "Unskilled", // Use first tag as designation or default
+      designation: worker.designation || "Unskilled", // Use designation from worker object
       attendance: new Array(numDays).fill("O"), // Initialize with "O" (Off)
       present: 0,
       ncp: 0
     }));
-    
+
     setData(prevData => ({
       ...prevData,
       workers: [...prevData.workers, ...newWorkers]
     }));
-    
+
     // Reset and close dialog
     setSelectedWorkerIds(new Set());
     setIsAddWorkerDialogOpen(false);
   };
-  
+
   // Open remove confirmation dialog
   const openRemoveConfirmDialog = (workerId: string, workerName: string, attendanceId?: string) => {
     setWorkerToRemove({ id: workerId, attendanceId, name: workerName });
@@ -372,7 +372,7 @@ export default function AttendanceSheet() {
         ...prevData,
         workers: prevData.workers.filter(w => w.id !== workerToRemove.id)
       }));
-      
+
       // Reset and close dialog
       setWorkerToRemove(null);
       setIsRemoveConfirmDialogOpen(false);
@@ -404,13 +404,13 @@ export default function AttendanceSheet() {
       setIsRemoving(false);
     }
   };
-  
+
   // Open change worker dialog
   const openChangeWorkerDialog = (workerId: string, workerName: string, attendanceId?: string) => {
     setWorkerToChange({ id: workerId, attendanceId, name: workerName });
     setIsChangeWorkerDialogOpen(true);
   };
-  
+
   // Fetch workers for change dialog
   const fetchWorkersForChange = async () => {
     try {
@@ -420,7 +420,7 @@ export default function AttendanceSheet() {
         console.error('No organization ID found');
         return;
       }
-      
+
       const workers = await workerService.getWorkers(orgId);
       // Filter out workers that are already in the attendance sheet (including the current worker being changed)
       const existingWorkerIds = new Set(data.workers.map(w => w.id));
@@ -432,7 +432,7 @@ export default function AttendanceSheet() {
       setIsLoadingWorkersForChange(false);
     }
   };
-  
+
   // Fetch workers when change dialog opens
   useEffect(() => {
     if (isChangeWorkerDialogOpen && workerToChange) {
@@ -440,13 +440,13 @@ export default function AttendanceSheet() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isChangeWorkerDialogOpen, workerToChange]);
-  
+
   // Replace worker - replace existing worker with new one
   const replaceWorker = async () => {
     if (!workerToChange || !selectedReplacementWorkerId) {
       return;
     }
-    
+
     const replacementWorker = availableWorkersForChange.find(w => w.id === selectedReplacementWorkerId);
     if (!replacementWorker) {
       return;
@@ -462,7 +462,7 @@ export default function AttendanceSheet() {
             return {
               id: replacementWorker.id,
               name: replacementWorker.name.toUpperCase(),
-              designation: replacementWorker.tags?.[0] || worker.designation,
+              designation: replacementWorker.designation || worker.designation,
               attendance: worker.attendance, // Keep existing attendance
               present: worker.present, // Keep existing stats
               ncp: worker.ncp
@@ -470,13 +470,13 @@ export default function AttendanceSheet() {
           }
           return worker;
         });
-        
+
         return {
           ...prevData,
           workers: updatedWorkers
         };
       });
-      
+
       // Reset and close dialog
       setWorkerToChange(null);
       setSelectedReplacementWorkerId(null);
@@ -499,7 +499,7 @@ export default function AttendanceSheet() {
               id: replacementWorker.id,
               attendanceId: workerToChange.attendanceId, // Keep the same attendance record ID
               name: replacementWorker.name.toUpperCase(),
-              designation: replacementWorker.tags?.[0] || worker.designation,
+              designation: replacementWorker.designation || worker.designation,
               attendance: worker.attendance, // Keep existing attendance
               present: worker.present, // Keep existing stats
               ncp: worker.ncp
@@ -507,13 +507,13 @@ export default function AttendanceSheet() {
           }
           return worker;
         });
-        
+
         return {
           ...prevData,
           workers: updatedWorkers
         };
       });
-      
+
       // Reset and close dialog
       setWorkerToChange(null);
       setSelectedReplacementWorkerId(null);
@@ -528,7 +528,7 @@ export default function AttendanceSheet() {
       setIsChangingWorker(false);
     }
   };
-  
+
   // Update attendance status when user types P, A, or O
   const updateAttendance = (workerId: string, dateIndex: number, newStatus: string) => {
     // Only accept P, A, or O (case-insensitive)
@@ -536,16 +536,16 @@ export default function AttendanceSheet() {
     if (!["P", "A", "O"].includes(validStatus)) {
       return;
     }
-    
+
     setData(prevData => {
       const updatedWorkers = prevData.workers.map(worker => {
         if (worker.id === workerId) {
           const updatedAttendance = [...worker.attendance];
           updatedAttendance[dateIndex] = validStatus;
-          
+
           // Recalculate present and NCP
           const { present, ncp } = calculateWorkerStats(updatedAttendance);
-          
+
           return {
             ...worker,
             attendance: updatedAttendance,
@@ -555,14 +555,14 @@ export default function AttendanceSheet() {
         }
         return worker;
       });
-      
+
       return {
         ...prevData,
         workers: updatedWorkers
       };
     });
   };
-  
+
   // Handle key press to update attendance
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, workerId: string, dateIndex: number) => {
     const key = e.key.toUpperCase();
@@ -577,14 +577,14 @@ export default function AttendanceSheet() {
       e.currentTarget.blur();
     }
   };
-  
+
   // Calculate totals for each date
   const calculateDateTotal = (dateIndex: number) => {
     return data.workers.reduce((sum, worker) => {
       return sum + (worker.attendance[dateIndex] === "P" ? 1 : 0);
     }, 0);
   };
-  
+
   // Calculate totals using useMemo for performance
   const { totalPresent, totalNCP, totalAttendance } = useMemo(() => {
     const present = data.workers.reduce((sum, worker) => sum + worker.present, 0);
@@ -608,10 +608,10 @@ export default function AttendanceSheet() {
       setIsSaving(true);
 
       // Generate date strings for each column (matching the format used in fetchAttendanceData)
-      const year = attendanceSheet?.monthYear 
-        ? attendanceSheet.monthYear.split('-')[0] 
+      const year = attendanceSheet?.monthYear
+        ? attendanceSheet.monthYear.split('-')[0]
         : new Date(data.startDate).getFullYear().toString();
-      
+
       const dateStrings = dateColumns.map((dateCol) => {
         const month = String(dateCol.month).padStart(2, '0');
         const day = String(dateCol.day).padStart(2, '0');
@@ -620,10 +620,10 @@ export default function AttendanceSheet() {
 
       // Build workerAttendance object
       const workerAttendance: Record<string, Record<string, string>> = {};
-      
+
       data.workers.forEach((worker) => {
         const workerRecords: Record<string, string> = {};
-        
+
         worker.attendance.forEach((status, index) => {
           const dateStr = dateStrings[index];
           if (dateStr && status) {
@@ -631,7 +631,7 @@ export default function AttendanceSheet() {
             workerRecords[dateStr] = status;
           }
         });
-        
+
         if (Object.keys(workerRecords).length > 0) {
           workerAttendance[worker.id] = workerRecords;
         }
@@ -702,12 +702,12 @@ export default function AttendanceSheet() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Project
           </Button>
-          
+
           <Logo size="sm" />
-          
+
           <div className="ml-auto flex items-center gap-2">
-            <Button 
-              variant="default" 
+            <Button
+              variant="default"
               size="sm"
               onClick={() => setIsAddWorkerDialogOpen(true)}
               className="bg-gradient-primary"
@@ -715,8 +715,8 @@ export default function AttendanceSheet() {
               <Plus className="h-4 w-4 mr-2" />
               Add Workers
             </Button>
-            <Button 
-              variant="default" 
+            <Button
+              variant="default"
               size="sm"
               onClick={handleSave}
               disabled={isSaving}
@@ -800,13 +800,12 @@ export default function AttendanceSheet() {
                       </TableCell>
                       <TableCell className="text-center border-r">{worker.designation}</TableCell>
                       {worker.attendance.map((status, dateIndex) => (
-                        <TableCell 
-                          key={dateIndex} 
-                          className={`text-center border-r p-0 ${
-                            status === "P" ? "bg-green-50 dark:bg-green-900/20" : 
-                            status === "A" ? "bg-red-50 dark:bg-red-900/20" : 
-                            "bg-blue-50 dark:bg-blue-900/20"
-                          }`}
+                        <TableCell
+                          key={dateIndex}
+                          className={`text-center border-r p-0 ${status === "P" ? "bg-green-50 dark:bg-green-900/20" :
+                              status === "A" ? "bg-red-50 dark:bg-red-900/20" :
+                                "bg-blue-50 dark:bg-blue-900/20"
+                            }`}
                         >
                           <input
                             type="text"
@@ -823,11 +822,10 @@ export default function AttendanceSheet() {
                             }}
                             onKeyDown={(e) => handleKeyDown(e, worker.id, dateIndex)}
                             onFocus={(e) => e.target.select()}
-                            className={`w-full h-full py-2 px-1 text-center font-medium border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 cursor-pointer ${
-                              status === "P" ? "text-green-700 dark:text-green-300" : 
-                              status === "A" ? "text-red-700 dark:text-red-300" : 
-                              "text-blue-700 dark:text-blue-300"
-                            }`}
+                            className={`w-full h-full py-2 px-1 text-center font-medium border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 cursor-pointer ${status === "P" ? "text-green-700 dark:text-green-300" :
+                                status === "A" ? "text-red-700 dark:text-red-300" :
+                                  "text-blue-700 dark:text-blue-300"
+                              }`}
                             maxLength={1}
                             title="Type P, A, or O"
                           />
@@ -869,7 +867,7 @@ export default function AttendanceSheet() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  
+
                   {/* Total Row */}
                   <TableRow className="bg-muted font-bold border-t-2">
                     <TableCell className="text-center border-r sticky left-0 bg-muted z-10"></TableCell>
@@ -888,7 +886,7 @@ export default function AttendanceSheet() {
                     </TableCell>
                     <TableCell className="border-r sticky right-0 bg-muted z-10"></TableCell>
                   </TableRow>
-                  
+
                   {/* Total Attendance Row */}
                   <TableRow className="bg-muted/50 font-bold">
                     <TableCell colSpan={3} className="text-center border-r sticky left-0 bg-muted/50 z-10">
@@ -921,7 +919,7 @@ export default function AttendanceSheet() {
               Select a replacement worker for <strong>{workerToChange?.name}</strong>. The attendance data will be preserved.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-4">
             {isLoadingWorkersForChange ? (
               <div className="flex items-center justify-center py-8">
@@ -937,11 +935,10 @@ export default function AttendanceSheet() {
                 {availableWorkersForChange.map((worker) => (
                   <div
                     key={worker.id}
-                    className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedReplacementWorkerId === worker.id
+                    className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedReplacementWorkerId === worker.id
                         ? "bg-primary/10 border-primary"
                         : "hover:bg-muted/50"
-                    }`}
+                      }`}
                     onClick={() => setSelectedReplacementWorkerId(worker.id)}
                   >
                     <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-primary bg-background">
@@ -970,7 +967,7 @@ export default function AttendanceSheet() {
               </div>
             )}
           </div>
-          
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -1011,7 +1008,7 @@ export default function AttendanceSheet() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => {
                 setIsRemoveConfirmDialogOpen(false);
                 setWorkerToRemove(null);
@@ -1047,7 +1044,7 @@ export default function AttendanceSheet() {
               Select workers to add to the attendance sheet. Workers already in the sheet are not shown.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="py-4">
             {isLoadingWorkers ? (
               <div className="flex items-center justify-center py-8">
@@ -1091,7 +1088,7 @@ export default function AttendanceSheet() {
               </div>
             )}
           </div>
-          
+
           <DialogFooter>
             <Button
               variant="outline"

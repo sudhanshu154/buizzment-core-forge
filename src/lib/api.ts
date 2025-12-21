@@ -74,6 +74,7 @@ export interface WorkerResponse {
   tenderIds: string[];
   orgIds: string[];
   tags: string[];
+  designation?: string;
   isActive: boolean;
 }
 
@@ -91,6 +92,7 @@ export interface CreateWorkerRequest {
   name: string;
   uanNumber: string;
   contactNumber?: string;
+  designation?: 'High Skilled' | 'Skilled' | 'UnSkilled';
   bankDetails?: {
     accountNumber: string;
     ifscCode: string;
@@ -275,11 +277,11 @@ class ApiClient {
     }
 
     const token = tokenManager.getToken();
-    
+
     const url = `${this.baseURL}${endpoint}`;
     console.log('🌐 Making API Request:', options.method || 'GET', url);
     console.log('📦 Request Body:', options.body);
-    
+
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -291,9 +293,9 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
-      
+
       console.log('📥 API Response Status:', response.status);
-      
+
       if (!response.ok) {
         const errorData = await response.text();
         console.error('❌ API Error:', response.status, errorData);
@@ -314,7 +316,7 @@ class ApiClient {
     if (method === 'POST' && endpoint === '/auth/signin') {
       return mockApiClient.login(body ? JSON.parse(body as string) : {}) as T;
     }
-    
+
     if (endpoint === '/users/me') {
       return mockApiClient.getCurrentUser() as T;
     }
@@ -328,7 +330,7 @@ class ApiClient {
     if (endpoint.startsWith('/orgs/')) {
       const parts = endpoint.split('/');
       const orgId = parts[2];
-      
+
       if (parts[3] === 'projects') {
         if (method === 'POST') {
           // Handle project creation
@@ -398,7 +400,7 @@ class ApiClient {
       const monthIndex = parts.indexOf('month');
       const tenderId = parts[tenderIdIndex + 1];
       const monthYear = parts[monthIndex + 1];
-      
+
       // Return mock attendance data
       return {
         id: null,
