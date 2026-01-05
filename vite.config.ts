@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => ({
     port: 8090,
     proxy: {
       "/api": {
-        target: "http://localhost:8080", // your BE URL
+        target: "https://buizzment-app-latest.onrender.com", // your BE URL
         changeOrigin: true,
         secure: false,
       },

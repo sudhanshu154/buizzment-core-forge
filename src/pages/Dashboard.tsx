@@ -207,7 +207,7 @@ export default function Dashboard() {
 
       // Use fetch directly to send org_ids in snake_case
       const token = localStorage.getItem('buizzment_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;// || 'http://localhost:8080/api';
       const response = await fetch(`${apiBaseUrl}/workers`, {
         method: 'POST',
         headers: {

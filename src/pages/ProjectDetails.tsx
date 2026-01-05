@@ -14,12 +14,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
+import {
   ArrowLeft,
-  Users, 
+  Users,
   Calendar,
   Clock,
   DollarSign,
@@ -30,42 +36,50 @@ import {
   Settings,
   Edit,
   Plus,
-  Loader2
+  Loader2,
+  Download,
+  MoreVertical
 } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { workerService } from "@/services/workerService";
 import { attendanceService, AttendanceSheetResponse } from "@/services/attendanceService";
 import { projectService } from "@/services/projectService";
+import { externalService } from "@/services/externalService";
 import { WorkerResponse, ProjectResponse } from "@/lib/api";
 
 export default function ProjectDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
-  
+
   // Project data state
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [projectError, setProjectError] = useState<string | null>(null);
-  
+
   // Attendance sheets state
   const [attendanceSheets, setAttendanceSheets] = useState<AttendanceSheetResponse[]>([]);
   const [isLoadingAttendanceSheets, setIsLoadingAttendanceSheets] = useState(false);
-  
+
   // Create attendance sheet dialog state
   const [isCreateSheetDialogOpen, setIsCreateSheetDialogOpen] = useState(false);
   const [availableWorkers, setAvailableWorkers] = useState<WorkerResponse[]>([]);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<Set<string>>(new Set());
   const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
+  // Export state
+  const [isExportPending, setIsExportPending] = useState(false);
+  const [exportData, setExportData] = useState<any | null>(null);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState({
     monthYear: "", // Format: "2025-06"
     startDate: "", // Format: "01/06/2025"
     endDate: "", // Format: "31/06/2025"
   });
-  
+
   // Fetch project data
   const fetchProject = useCallback(async () => {
     if (!id) {
@@ -83,7 +97,7 @@ export default function ProjectDetails() {
         setIsLoadingProject(false);
         return;
       }
-      
+
       const projectData = await projectService.getProject(orgId, id);
       setProject(projectData);
     } catch (error) {
@@ -93,7 +107,7 @@ export default function ProjectDetails() {
       setIsLoadingProject(false);
     }
   }, [id]);
-  
+
   // Fetch project on mount
   useEffect(() => {
     fetchProject();
@@ -106,7 +120,7 @@ export default function ProjectDetails() {
     try {
       setIsLoadingAttendanceSheets(true);
       const sheets = await attendanceService.getAttendanceSheets(id);
-      
+
       // If API returns empty or no data, show dummy data
       if (!sheets || sheets.length === 0) {
         console.log('No attendance sheets found, showing dummy data');
@@ -167,7 +181,7 @@ export default function ProjectDetails() {
       fetchAttendanceSheets();
     }
   }, [project, activeTab, fetchAttendanceSheets]);
-  
+
   // Fetch workers from API
   const fetchWorkers = useCallback(async () => {
     try {
@@ -177,7 +191,7 @@ export default function ProjectDetails() {
         console.error('No organization ID found');
         return;
       }
-      
+
       const workers = await workerService.getWorkers(orgId);
       setAvailableWorkers(workers);
     } catch (error) {
@@ -186,14 +200,14 @@ export default function ProjectDetails() {
       setIsLoadingWorkers(false);
     }
   }, []);
-  
+
   // Fetch workers when dialog opens
   useEffect(() => {
     if (isCreateSheetDialogOpen) {
       fetchWorkers();
     }
   }, [isCreateSheetDialogOpen, fetchWorkers]);
-  
+
   // Toggle worker selection - memoized to prevent re-renders
   const toggleWorkerSelection = useCallback((workerId: string) => {
     setSelectedWorkerIds(prev => {
@@ -206,7 +220,7 @@ export default function ProjectDetails() {
       return newSet;
     });
   }, []);
-  
+
   // Handle dialog open change - prevent infinite loops
   const handleDialogOpenChange = useCallback((open: boolean) => {
     setIsCreateSheetDialogOpen(open);
@@ -216,7 +230,7 @@ export default function ProjectDetails() {
       setSelectedWorkerIds(new Set());
     }
   }, []);
-  
+
   // Format date to DD/MM/YYYY
   const formatDate = (dateString: string): string => {
     if (!dateString) return "";
@@ -226,7 +240,7 @@ export default function ProjectDetails() {
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   };
-  
+
   // Get monthYear from date input (YYYY-MM format)
   const getMonthYear = (dateString: string): string => {
     if (!dateString) return "";
@@ -235,31 +249,31 @@ export default function ProjectDetails() {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     return `${year}-${month}`;
   };
-  
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.startDate || !formData.endDate || selectedWorkerIds.size === 0) {
       alert("Please fill all fields and select at least one worker");
       return;
     }
-    
+
     try {
       setIsSubmitting(true);
-      
+
       // Format dates
       const startDateFormatted = formatDate(formData.startDate);
       const endDateFormatted = formatDate(formData.endDate);
       const monthYear = formData.monthYear || getMonthYear(formData.startDate);
-      
+
       console.log('📝 Creating attendance sheet with data:', {
         tenderId: id,
         monthYear,
         startDate: startDateFormatted,
         endDate: endDateFormatted,
       });
-      
+
       // Create attendance sheet
       const result = await attendanceService.createAttendanceSheet({
         tenderId: id || "", // Using project ID as tenderId
@@ -267,20 +281,20 @@ export default function ProjectDetails() {
         startDate: startDateFormatted,
         endDate: endDateFormatted,
       });
-      
+
       console.log('✅ Attendance sheet created:', result);
-      
+
       // Reset form and close dialog
       setFormData({ monthYear: "", startDate: "", endDate: "" });
       setSelectedWorkerIds(new Set());
       setIsCreateSheetDialogOpen(false);
-      
+
       // Refresh attendance sheets list
       await fetchAttendanceSheets();
-      
+
       // Show success message
       alert("Attendance sheet created successfully!");
-      
+
     } catch (error) {
       console.error('❌ Failed to create attendance sheet:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -290,9 +304,39 @@ export default function ProjectDetails() {
     }
   };
 
+  // Handle Export
+  const handleExport = async (eventName: string, sheetId: string) => {
+    try {
+      setIsExportPending(true);
+      const response = await externalService.processPayment(eventName, sheetId);
+      setExportData(response);
+      setIsExportDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to export:', error);
+      alert('Failed to export payment sheet');
+    } finally {
+      setIsExportPending(false);
+    }
+  };
+
+  // Handle Download txt
+  const handleDownload = () => {
+    if (!exportData || !exportData.txtData) return;
+
+    const blob = new Blob([exportData.txtData], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `payment-export-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
   const getStatusColor = (status: string | null | undefined) => {
     if (!status) return "bg-secondary text-secondary-foreground";
-    
+
     switch (status.toUpperCase()) {
       case "IN_PROGRESS": return "bg-success text-success-foreground";
       case "COMPLETED": return "bg-primary text-primary-foreground";
@@ -314,10 +358,10 @@ export default function ProjectDetails() {
     const start = new Date(project.startingDate);
     const end = new Date(project.tentativeEndingDate);
     const now = new Date();
-    
+
     if (now < start) return 0;
     if (now > end) return 100;
-    
+
     const total = end.getTime() - start.getTime();
     const elapsed = now.getTime() - start.getTime();
     return Math.round((elapsed / total) * 100);
@@ -418,9 +462,9 @@ export default function ProjectDetails() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
-          
+
           <Logo size="sm" />
-          
+
           <div className="ml-auto flex items-center space-x-2">
             <Button variant="outline" size="sm">
               <Edit className="h-4 w-4 mr-2" />
@@ -617,7 +661,7 @@ export default function ProjectDetails() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Attendance Sheets</h3>
-                    <Button 
+                    <Button
                       className="bg-gradient-primary"
                       onClick={() => setIsCreateSheetDialogOpen(true)}
                     >
@@ -625,7 +669,7 @@ export default function ProjectDetails() {
                       Create New Sheet
                     </Button>
                   </div>
-                  
+
                   {isLoadingAttendanceSheets ? (
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -644,11 +688,11 @@ export default function ProjectDetails() {
                       {attendanceSheets.map((sheet) => {
                         const totalDays = calculateTotalDays(sheet.startDate, sheet.endDate);
                         const workerCount = sheet.attendanceIds?.length || 0;
-                        
+
                         return (
-                          <Card 
-                            key={sheet.id} 
-                            className="hover:shadow-md transition-shadow cursor-pointer" 
+                          <Card
+                            key={sheet.id}
+                            className="hover:shadow-md transition-shadow cursor-pointer"
                             onClick={() => navigate(`/project/${id}/attendance/${sheet.id}`)}
                           >
                             <CardContent className="pt-6">
@@ -697,7 +741,7 @@ export default function ProjectDetails() {
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Payment Sheets</h3>
                   </div>
-                  
+
                   {isLoadingAttendanceSheets ? (
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -716,16 +760,18 @@ export default function ProjectDetails() {
                       {attendanceSheets.map((sheet) => {
                         const totalDays = calculateTotalDays(sheet.startDate, sheet.endDate);
                         const workerCount = sheet.attendanceIds?.length || 0;
-                        
+
                         return (
-                          <Card 
-                            key={sheet.id} 
-                            className="hover:shadow-md transition-shadow cursor-pointer" 
-                            onClick={() => navigate(`/project/${id}/payment/${sheet.monthYear}`)}
+                          <Card
+                            key={sheet.id}
+                            className="hover:shadow-md transition-shadow"
                           >
                             <CardContent className="pt-6">
                               <div className="flex justify-between items-start">
-                                <div>
+                                <div
+                                  className="cursor-pointer flex-1"
+                                  onClick={() => navigate(`/project/${id}/payment/${sheet.monthYear}`)}
+                                >
                                   <h4 className="font-semibold mb-1">
                                     {formatMonthYear(sheet.monthYear)} Payment Sheet
                                   </h4>
@@ -742,7 +788,28 @@ export default function ProjectDetails() {
                                     Workers: {workerCount} {totalDays > 0 && `| Total Days: ${totalDays}`}
                                   </p>
                                 </div>
-                                <Badge className="bg-primary text-primary-foreground">View Payment</Badge>
+                                <div className="flex items-center gap-2">
+                                  <Badge className="bg-primary text-primary-foreground">View</Badge>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 p-0">
+                                        <MoreVertical className="h-4 w-4" />
+                                        <span className="sr-only">Open menu</span>
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => handleExport('paymentToEcr', sheet.id)}>
+                                        paymentToEcr
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleExport('paymentToArrearEcr', sheet.id)}>
+                                        paymentToArrearEcr
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleExport('welfare', sheet.id)}>
+                                        welfare
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </div>
                             </CardContent>
                           </Card>
@@ -839,7 +906,7 @@ export default function ProjectDetails() {
               Fill in the details to create a new attendance sheet for this project.
             </DialogDescription>
           </DialogHeader>
-          
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
               {/* Month Year Field */}
@@ -958,6 +1025,72 @@ export default function ProjectDetails() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Export Result</DialogTitle>
+            <DialogDescription>
+              Payment processing completed.
+            </DialogDescription>
+          </DialogHeader>
+
+          {exportData && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center bg-muted p-4 rounded-lg">
+                <div>
+                  <h4 className="font-semibold">Text Data File</h4>
+                  <p className="text-sm text-muted-foreground">Ready for download</p>
+                </div>
+                <Button onClick={handleDownload} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Download .txt
+                </Button>
+              </div>
+
+              {exportData.missing && exportData.missing.length > 0 && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                  <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Missing / Warnings</h4>
+                  <pre className="text-xs whitespace-pre-wrap">
+                    {JSON.stringify(exportData.missing, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-muted px-4 py-2 font-semibold border-b">
+                  Processed Records ({exportData.processed?.length || 0})
+                </div>
+                <div className="max-h-[300px] overflow-y-auto p-0">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left">UAN</th>
+                        <th className="px-4 py-2 text-left">Name</th>
+                        <th className="px-4 py-2 text-right">Gross Wages</th>
+                        <th className="px-4 py-2 text-right">EPF Wages</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exportData.processed?.map((record: any, idx: number) => (
+                        <tr key={idx} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-4 py-2">{record.UAN}</td>
+                          <td className="px-4 py-2">{record.MemberName}</td>
+                          <td className="px-4 py-2 text-right">{record.GrossWages}</td>
+                          <td className="px-4 py-2 text-right">{record.EPFWages}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setIsExportDialogOpen(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
